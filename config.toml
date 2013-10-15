@@ -1,0 +1,37 @@
+#######################
+# Hakobiya Server Config
+#######################
+[server]
+name = "QA+"
+bind = "localhost:8080"
+path = "/ws"
+
+#######################
+# Q: Question channel
+#######################
+[[channel]]
+prefix = "Q"
+expose = ["$listeners"] #Q.$listeners
+	# Broadcasts
+	[channel.broadcast]
+		# Q.#answer - new answer notifications
+		[channel.broadcast.answer]
+			type = "string"
+			readonly = true
+	# Variables
+	[channel.var]
+		# Q.%typing - is someone typing?
+		[channel.var.typing]
+			type = "bool"
+			map = "any"
+
+#######################
+# @: User notifcations  
+#######################
+[[channel]]
+prefix = "@"
+restrict = ["userid"]
+	# @.last_notify - last notification ID
+	[channel.var.last_notify]
+		type = "date"
+		readonly = true
