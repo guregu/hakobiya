@@ -29,7 +29,7 @@ type varDef struct {
 
 func parseConfig(file string) config {
 	var conf config
-	md, err := toml.DecodeFile(file, &conf)
+	_, err := toml.DecodeFile(file, &conf)
 	if err != nil {
 		panic(err)
 	}

@@ -4,7 +4,7 @@ function AnswerCtrl($scope, $routeParamaters, Hakobiya) {
 	$scope.typing = false;
 	$scope.answers = [];
 
-	Hakobiya.link($scope, $scope.channel, {
+	Hakobiya.bind($scope, $scope.channel, {
 		"users": "$listeners",
 		"typing": "%typing",
 		"answers": "#answers"
