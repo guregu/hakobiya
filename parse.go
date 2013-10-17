@@ -4,7 +4,7 @@ import "github.com/BurntSushi/toml"
 
 type config struct {
 	Server   serverConfig
-	Channels []channelConfig
+	Channels []channelConfig `toml:"channel"`
 }
 
 type serverConfig struct {

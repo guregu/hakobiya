@@ -1,6 +1,7 @@
 package main
 
 import "sync"
+import "log"
 
 var channelTable = make(map[string]*channel)
 var channelTableMutex = &sync.RWMutex{}
@@ -40,12 +41,12 @@ func newChannel(name string) *channel {
 	prefix := name[0]
 	cfg, exists := channelConfigs[prefix]
 	if !exists {
-		//TODO: error: no such prefix
 		return nil
 	}
 	ch := &channel{
-		name:       cfg.Prefix + name,
+		name:       name,
 		listeners:  make(map[*client]bool),
+		index:      make(map[string]varType),
 		broadcasts: make(map[string]broadcast),
 		vars:       make(map[string]interface{}),
 		uservars:   make(map[string]map[string]interface{}),
@@ -73,11 +74,20 @@ func registerChannel(ch *channel) {
 }
 
 func getChannel(name string) *channel {
-	//TODO
-	return nil
+	channelTableMutex.RLock()
+	ch, exists := channelTable[name]
+	channelTableMutex.RUnlock()
+	if !exists {
+		ch = newChannel(name)
+		if ch != nil {
+			registerChannel(ch)
+		}
+	}
+	return ch
 }
 
 func (ch *channel) run() {
+	log.Printf("Running channel: %s", ch.name)
 	for {
 		select {}
 	}

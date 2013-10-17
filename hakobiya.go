@@ -10,8 +10,13 @@ import (
 var serverConf serverConfig
 
 func main() {
+	// load config
 	conf := parseConfig("config.toml")
 	serverConf = conf.Server
+	for _, ccfg := range conf.Channels {
+		log.Printf("Channel: %s", ccfg.Prefix)
+		channelConfigs[ccfg.Prefix[0]] = ccfg
+	}
 
 	// start http services
 	log.Printf("Starting Hakobiya %s @ %s%s \n", serverConf.Name, serverConf.Bind, serverConf.Path)
