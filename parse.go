@@ -18,6 +18,7 @@ type channelConfig struct {
 	Expose    []string // special $vars to expose
 	Restrict  []string
 	Vars      map[string]varDef `toml:"var"`
+	Magic     map[string]magicDef
 	Broadcast map[string]broadcast
 }
 
@@ -42,75 +43,72 @@ func (cfg channelConfig) apply(ch *channel) {
 			panic("Unknown system var in expose: " + ex)
 		}
 	}
-	// vars
-	for v_name, v := range cfg.Vars {
-		var typ varType
-		switch v.Map {
-		case "":
-			typ = ChannelVar
-		case "user":
-			typ = UserVar
-		case "sum":
-			typ = MagicVar
-		case "any":
-			typ = MagicVar
-		case "all":
-			typ = MagicVar
-		}
-		ch.index[v_name] = typ
-
-		if typ == MagicVar {
-			var fn func() interface{}
-			sig := v.Type + "_" + v.Map
-			switch sig {
-			case "bool_any":
-				fn = func() interface{} {
-					for _, vars := range ch.uservars {
-						if vars[v_name].(bool) {
-							return true
-						}
+	// user vars
+	for v_name, _ := range cfg.Vars {
+		ch.index[v_name] = UserVar
+		ch.uservars[v_name] = make(map[*client]interface{})
+		// TODO set read only
+	}
+	// TODO: channel vars?
+	// magic
+	for v_name, m := range cfg.Magic {
+		ch.index[v_name] = MagicVar
+		v := cfg.Vars[m.Var]
+		sig := v.Type + ":" + m.Map
+		var fn func() interface{}
+		switch sig {
+		case "bool:any":
+			fn = func() interface{} {
+				for _, val := range ch.uservars[m.Var] {
+					if val.(bool) {
+						return true
 					}
-					return false
 				}
-			case "bool_all":
-				fn = func() interface{} {
-					for _, vars := range ch.uservars {
-						if !vars[v_name].(bool) {
-							return false
-						}
-					}
-					return true
-				}
-			case "bool_sum":
-				fn = func() interface{} {
-					ct := 0
-					for _, vars := range ch.uservars {
-						if vars[v_name].(bool) {
-							ct++
-						}
-					}
-					return ct
-				}
-			case "int_sum":
-				fn = func() interface{} {
-					sum := 0
-					for _, vars := range ch.uservars {
-						sum += vars[v_name].(int)
-					}
-					return sum
-				}
-			default:
-				panic("Unknown magic signature: " + sig)
+				return false
 			}
-			ch.magic[v_name] = fn
+		case "bool:all":
+			fn = func() interface{} {
+				for _, val := range ch.uservars[m.Var] {
+					if !val.(bool) {
+						return false
+					}
+				}
+				return true
+			}
+		case "bool:sum":
+			fn = func() interface{} {
+				ct := 0
+				for _, val := range ch.uservars[m.Var] {
+					if val.(bool) {
+						ct++
+					}
+				}
+				return ct
+			}
+		case "int:sum":
+			fn = func() interface{} {
+				sum := 0
+				for _, val := range ch.uservars[m.Var] {
+					sum += val.(int)
+				}
+				return sum
+			}
+		default:
+			panic("Unknown magic signature: " + sig)
 		}
+		ch.magic[v_name] = fn
+		ch.deps[m.Var] = append(ch.deps[m.Var], v_name)
 	}
 }
 
 type varDef struct {
 	Type     string
-	Map      string
 	ReadOnly bool
+}
+
+type magicDef struct {
+	Var string
+	Map string
 }
 
 func parseConfig(file string) config {

@@ -20,10 +20,15 @@ expose = ["$listeners"] #Q.$listeners
 			readonly = true
 	# Variables
 	[channel.var]
-		# Q.%typing - is someone typing?
+		# Q.%typing - am I typing?
 		[channel.var.typing]
 			type = "bool"
-			map = "any"
+	# Magic
+	[channel.magic]
+		# Q.&typers - how many users are typing
+		[channel.magic.typers]
+			var = "typing"
+			map = "sum"
 
 #######################
 # @: User notifcations  

@@ -74,6 +74,8 @@ func (c *client) run() {
 			} else {
 				c.send(Error(jpr.Cmd, "invalid channel"))
 			}
+		case "g": //get
+		case "s": //set
 		default:
 			log.Printf("Unknown req %s\n", req.Cmd)
 		}
