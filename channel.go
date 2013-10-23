@@ -44,6 +44,33 @@ type channel struct {
 	part chan *client
 }
 
+func newChannel(name string) *channel {
+	prefix := name[0]
+	cfg, exists := channelConfigs[prefix]
+	if !exists {
+		return nil
+	}
+	ch := &channel{
+		name:       name,
+		listeners:  make(map[*client]bool),
+		index:      make(map[string]varType),
+		broadcasts: make(map[string]broadcast),
+		vars:       make(map[string]interface{}),
+		uservars:   make(map[string]map[*client]interface{}),
+		magic:      make(map[string]func() interface{}),
+		cache:      make(map[string]interface{}),
+		deps:       make(map[string][]string),
+
+		send: make(chan message),
+		get:  make(chan getter),
+		set:  make(chan setter),
+		join: make(chan *client),
+		part: make(chan *client),
+	}
+	cfg.apply(ch)
+	return ch
+}
+
 // write all
 func (ch *channel) wall(msg interface{}) {
 	for c, _ := range ch.listeners {
@@ -78,26 +105,35 @@ func (ch *channel) run() {
 	log.Printf("Running channel: %s", ch.name)
 	for {
 		select {
-		// case msg := <-ch.send:
-		// 	bc, ok := ch.broadcasts[msg.To]
-		// 	if !ok {
-
-		// 	}
-		// }
-		case gtr := <-ch.get:
-			vtype, exists := ch.index[gtr.Var]
-			prefix, vname := gtr.Var[0], gtr.Var[1:]
-			if !checkPrefix(prefix, vtype) {
-				log.Printf("Mismatched sigil: %s for %v", gtr.Var, vtype)
+		case c := <-ch.join:
+			ch.listeners[c] = true
+			// TODO: set defaults
+			/*
+				for v_name, values := range ch.uservars {
+				}
+			*/
+		case c := <-ch.part:
+			delete(ch.listeners, c)
+			for v_name, values := range ch.uservars {
+				if _, exists := values[c]; exists {
+					delete(values, c)
+					ch.invalidate(v_name)
+				}
 			}
+		case gtr := <-ch.get:
+			prefix, vname := gtr.Var[0], gtr.Var[1:]
+			vtype, exists := ch.index[vname]
 			if !exists {
 				gtr.From.send(Error("g", "no such var"))
 				continue
 			}
+			if !checkPrefix(prefix, vtype) {
+				log.Printf("Mismatched sigil: %s for %v", gtr.Var, vtype)
+			}
 			var val interface{}
 			switch vtype {
 			case UserVar:
-				val = ch.uservars[vname]
+				val = ch.uservars[vname][gtr.From]
 			case MagicVar:
 				val = ch.cache[vname]
 			case SystemVar:
@@ -111,14 +147,14 @@ func (ch *channel) run() {
 			}
 			gtr.From.send(msg)
 		case sttr := <-ch.set:
-			vtype, exists := ch.index[sttr.Var]
 			prefix, vname := sttr.Var[0], sttr.Var[1:]
-			if !checkPrefix(prefix, vtype) {
-				log.Printf("Mismatched sigil: %s for %v", sttr.Var, vtype)
-			}
+			vtype, exists := ch.index[vname]
 			if !exists {
 				sttr.From.send(Error("g", "no such var"))
 				continue
+			}
+			if !checkPrefix(prefix, vtype) {
+				log.Printf("Mismatched sigil: %s for %v", sttr.Var, vtype)
 			}
 			//new stuff
 			switch vtype {
@@ -152,33 +188,6 @@ type setter struct {
 type broadcast struct {
 	Type     string
 	ReadOnly bool
-}
-
-func newChannel(name string) *channel {
-	prefix := name[0]
-	cfg, exists := channelConfigs[prefix]
-	if !exists {
-		return nil
-	}
-	ch := &channel{
-		name:       name,
-		listeners:  make(map[*client]bool),
-		index:      make(map[string]varType),
-		broadcasts: make(map[string]broadcast),
-		vars:       make(map[string]interface{}),
-		uservars:   make(map[string]map[*client]interface{}),
-		magic:      make(map[string]func() interface{}),
-		cache:      make(map[string]interface{}),
-		deps:       make(map[string][]string),
-
-		send: make(chan message),
-		get:  make(chan getter),
-		set:  make(chan setter),
-		join: make(chan *client),
-		part: make(chan *client),
-	}
-	cfg.apply(ch)
-	return ch
 }
 
 func registerChannel(ch *channel) {

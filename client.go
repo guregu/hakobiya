@@ -75,7 +75,34 @@ func (c *client) run() {
 				c.send(Error(jpr.Cmd, "invalid channel"))
 			}
 		case "g": //get
+			var gr getRequest
+			json.Unmarshal(data, &gr)
+			ch := getChannel(gr.Channel)
+			if ch != nil {
+				for _, v := range gr.Vars {
+					gttr := getter{
+						From: c,
+						Var:  v,
+					}
+					ch.get <- gttr
+				}
+			} else {
+				c.send(Error(gr.Cmd, "invalid channel"))
+			}
 		case "s": //set
+			var sr setRequest
+			json.Unmarshal(data, &sr)
+			ch := getChannel(sr.Channel)
+			if ch != nil {
+				sttr := setter{
+					From:  c,
+					Var:   sr.Var,
+					Value: sr.Value,
+				}
+				ch.set <- sttr
+			} else {
+				c.send(Error(sr.Cmd, "invalid channel"))
+			}
 		default:
 			log.Printf("Unknown req %s\n", req.Cmd)
 		}

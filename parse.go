@@ -54,49 +54,7 @@ func (cfg channelConfig) apply(ch *channel) {
 	for v_name, m := range cfg.Magic {
 		ch.index[v_name] = MagicVar
 		v := cfg.Vars[m.Var]
-		sig := v.Type + ":" + m.Map
-		var fn func() interface{}
-		switch sig {
-		case "bool:any":
-			fn = func() interface{} {
-				for _, val := range ch.uservars[m.Var] {
-					if val.(bool) {
-						return true
-					}
-				}
-				return false
-			}
-		case "bool:all":
-			fn = func() interface{} {
-				for _, val := range ch.uservars[m.Var] {
-					if !val.(bool) {
-						return false
-					}
-				}
-				return true
-			}
-		case "bool:sum":
-			fn = func() interface{} {
-				ct := 0
-				for _, val := range ch.uservars[m.Var] {
-					if val.(bool) {
-						ct++
-					}
-				}
-				return ct
-			}
-		case "int:sum":
-			fn = func() interface{} {
-				sum := 0
-				for _, val := range ch.uservars[m.Var] {
-					sum += val.(int)
-				}
-				return sum
-			}
-		default:
-			panic("Unknown magic signature: " + sig)
-		}
-		ch.magic[v_name] = fn
+		ch.magic[v_name] = magic_func(ch, m.Var, v.Type, m.Map)
 		ch.deps[m.Var] = append(ch.deps[m.Var], v_name)
 	}
 }
@@ -104,6 +62,7 @@ func (cfg channelConfig) apply(ch *channel) {
 type varDef struct {
 	Type     string
 	ReadOnly bool
+	// Default  interface{}
 }
 
 type magicDef struct {
