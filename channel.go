@@ -29,6 +29,7 @@ type channel struct {
 	restrict   []string
 	listeners  map[*client]bool
 	index      map[string]varType
+	types      map[string]jsType
 	broadcasts map[string]broadcast
 	vars       map[string]interface{}
 	uservars   map[string]map[*client]interface{}
@@ -54,6 +55,7 @@ func newChannel(name string) *channel {
 		name:       name,
 		listeners:  make(map[*client]bool),
 		index:      make(map[string]varType),
+		types:      make(map[string]jsType),
 		broadcasts: make(map[string]broadcast),
 		vars:       make(map[string]interface{}),
 		uservars:   make(map[string]map[*client]interface{}),
@@ -107,18 +109,36 @@ func (ch *channel) run() {
 		select {
 		case c := <-ch.join:
 			ch.listeners[c] = true
-			// TODO: set defaults
-			/*
-				for v_name, values := range ch.uservars {
-				}
-			*/
+
+			// new guy joined so we gotta set up his vars
+			for v_name, values := range ch.uservars {
+				// TODO: some kind of default value setting, not just zero?
+				values[c] = ch.types[v_name].zero()
+				ch.invalidate(v_name)
+			}
+
+			// $listeners
+			ct := len(ch.listeners)
+			ch.vars["$listeners"] = ct
+			if ch.index["listeners"] == SystemVar {
+				ch.notify("$listeners", ct)
+			}
 		case c := <-ch.part:
 			delete(ch.listeners, c)
+
+			// goodbye, var cleanup
 			for v_name, values := range ch.uservars {
 				if _, exists := values[c]; exists {
 					delete(values, c)
 					ch.invalidate(v_name)
 				}
+			}
+
+			// $listeners
+			ct := len(ch.listeners)
+			ch.vars["$listeners"] = ct
+			if ch.index["listeners"] == SystemVar {
+				ch.notify("$listeners", ct)
 			}
 		case gtr := <-ch.get:
 			prefix, vname := gtr.Var[0], gtr.Var[1:]
@@ -159,8 +179,14 @@ func (ch *channel) run() {
 			//new stuff
 			switch vtype {
 			case UserVar:
-				ch.uservars[vname][sttr.From] = sttr.Value
-				ch.invalidate(vname)
+				// did we get good data?
+				typ := ch.types[vname]
+				if typ.is(sttr.Value) {
+					ch.uservars[vname][sttr.From] = sttr.Value
+					ch.invalidate(vname)
+				} else {
+					sttr.From.send(Error("s", "invalid type for "+vname))
+				}
 			case ChannelVar:
 				// TODO
 			}

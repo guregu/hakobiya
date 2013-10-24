@@ -33,7 +33,8 @@ func (cfg channelConfig) apply(ch *channel) {
 	}
 	// expose
 	for _, ex := range cfg.Expose {
-		ch.index[ex] = SystemVar
+		v_name := ex[1:]
+		ch.index[v_name] = SystemVar
 		switch ex {
 		case "$listeners":
 			ch.magic["$listeners"] = func() interface{} {
@@ -44,9 +45,10 @@ func (cfg channelConfig) apply(ch *channel) {
 		}
 	}
 	// user vars
-	for v_name, _ := range cfg.Vars {
+	for v_name, v := range cfg.Vars {
 		ch.index[v_name] = UserVar
 		ch.uservars[v_name] = make(map[*client]interface{})
+		ch.types[v_name] = jsType(v.Type) // TODO: validate types
 		// TODO set read only
 	}
 	// TODO: channel vars?
@@ -56,6 +58,8 @@ func (cfg channelConfig) apply(ch *channel) {
 		v := cfg.Vars[m.Var]
 		ch.magic[v_name] = magic_func(ch, m.Var, v.Type, m.Map)
 		ch.deps[m.Var] = append(ch.deps[m.Var], v_name)
+		// とりあえず run it once
+		ch.cache[v_name] = ch.magic[v_name]()
 	}
 }
 

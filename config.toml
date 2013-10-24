@@ -29,6 +29,9 @@ expose = ["$listeners"] #Q.$listeners
 		[channel.magic.typers]
 			var = "typing"
 			map = "sum"
+		[channel.magic.is_someone_typing]
+			var = "typing"
+			map = "any"
 
 #######################
 # @: User notifcations  

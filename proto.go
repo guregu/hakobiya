@@ -34,3 +34,55 @@ type errorMessage struct {
 	Var     string `json:"n,omitempty"`
 	Message string `json:"m,omitempty"`
 }
+
+type jsType string
+
+const (
+	jsBool   jsType = "bool"
+	jsInt    jsType = "int"
+	jsFloat  jsType = "float"
+	jsString jsType = "string"
+)
+
+func (me jsType) is(v interface{}) bool {
+	switch me {
+	case jsBool:
+		switch v.(type) {
+		case bool:
+			return true
+		}
+	case jsInt:
+		switch v.(type) {
+		case int:
+			return true
+		}
+	case jsFloat:
+		switch v.(type) {
+		case float32, float64:
+			return true
+		}
+	case jsString:
+		switch v.(type) {
+		case string:
+			return true
+		}
+	default:
+		panic("unknown jsType comparison! " + me)
+	}
+	return false
+}
+
+func (me jsType) zero() interface{} {
+	switch me {
+	case jsBool:
+		return false
+	case jsInt:
+		return 0
+	case jsFloat:
+		return 0.0
+	case jsString:
+		return ""
+	default:
+		panic("unknown jsType " + me)
+	}
+}

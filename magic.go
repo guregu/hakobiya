@@ -5,6 +5,11 @@ func magic_func(ch *channel, sourceVar, v_type, v_map string) func() interface{}
 	switch sig {
 	case "bool:any":
 		return func() interface{} {
+			// special case: no one is here
+			if len(ch.uservars[sourceVar]) == 0 {
+				return false
+			}
+
 			for _, val := range ch.uservars[sourceVar] {
 				if val.(bool) {
 					return true
@@ -14,6 +19,11 @@ func magic_func(ch *channel, sourceVar, v_type, v_map string) func() interface{}
 		}
 	case "bool:all":
 		return func() interface{} {
+			// special case: no one is here
+			if len(ch.uservars[sourceVar]) == 0 {
+				return false
+			}
+
 			for _, val := range ch.uservars[sourceVar] {
 				if !val.(bool) {
 					return false
@@ -41,18 +51,5 @@ func magic_func(ch *channel, sourceVar, v_type, v_map string) func() interface{}
 		}
 	default:
 		panic("Unknown magic signature: " + sig)
-	}
-}
-
-func zero_value(v_type string) interface{} {
-	switch v_type {
-	case "bool":
-		return false
-	case "int":
-		return 0
-	case "string":
-		return ""
-	default:
-		return nil
 	}
 }
