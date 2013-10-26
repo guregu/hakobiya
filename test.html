@@ -1,27 +1,41 @@
 <!doctype html>
-<html>
+<html ng-app="testGuy">
 	<head>
 		<title>Hakobiya test</title>
+		<script src="https://ajax.googleapis.com/ajax/libs/angularjs/1.0.8/angular.min.js"></script>
+		<script src="/js/hakobiya.js"></script>
 		<script>
-			var ws = new WebSocket("ws://" + window.location.host + "/ws");
-			ws.onopen = function() {
-			  console.log("conntectd");
-			  //ws.send(JSON.stringify({x: 'j', c: 'Q123'})); 
-			  // ws.send(JSON.stringify({x: 'j', c: 'Q123555'})); 
-			  // ws.send(JSON.stringify({x: 'j', c: '@Balls'})); 
+			// stuff
+			var testModule = angular.module('testGuy', ['hakobiya']);
+			testModule.run(function (Hakobiya) {
+				console.log(Hakobiya);
+				Hakobiya.connect("ws://localhost:8080/ws");
+			});
 
-			   // Sends a message.
-			};
-			ws.onmessage = function(e) {
-			  // Receives a message.
-			  console.log(e.data);
-			};
-			ws.onclose = function() {
-			  console.log("closed");
-			};
+
+			function TestCtrl($scope, Hakobiya) {
+				$scope.channel = null;
+				$scope.typers = 0;
+				$scope.typing = false;
+				$scope.users = 0;
+				$scope.atleastonetyper = null;
+
+				Hakobiya.bind($scope, "channel",
+				{
+					"typers": "&typers",
+					"typing": "%typing",
+					"users": "$listeners",
+					"atleastonetyper": "&is_someone_typing"
+				});
+
+				$scope.channel = "Q121"
+			}
 		</script>
 	</head>
-	<body>
-		Testing!
+	<body ng-controller="TestCtrl">
+		{{users}} users <br />
+		{{typers}} typers <br />
+		{{atleastonetyper}} <br />
+		<button ng-click="typing = !typing">Clicky</button>
 	</body>
 </html>

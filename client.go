@@ -32,7 +32,8 @@ func (c *client) writer() {
 			}
 			err := websocket.JSON.Send(c.socket, msg)
 			if err != nil {
-				panic(err)
+				// abandon ship
+				return
 			}
 		}
 	}

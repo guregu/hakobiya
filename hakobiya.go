@@ -22,6 +22,8 @@ func main() {
 	log.Printf("Starting Hakobiya %s @ %s%s \n", serverConf.Name, serverConf.Bind, serverConf.Path)
 	http.HandleFunc("/", index)
 	http.Handle(serverConf.Path, websocket.Handler(serveWS))
+	// for testing purposes
+	http.Handle("/js/", http.StripPrefix("/js/", http.FileServer(http.Dir("js"))))
 	http.ListenAndServe(serverConf.Bind, nil)
 }
 
