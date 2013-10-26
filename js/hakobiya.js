@@ -5,6 +5,7 @@ hakobiyaModule.factory('Hakobiya', function($rootScope) {
 		socket: null,
 		sendQueue: [],
 		channels: [],
+		jpCount: {},
 		URL: null,
 
 		connect: function(addr) {
@@ -16,7 +17,6 @@ hakobiyaModule.factory('Hakobiya', function($rootScope) {
 				console.log("Hakobiya: connected.");
 
 				angular.forEach(self.sendQueue, function(msg) {
-				    console.log("send queued " + angular.toJson(msg));
 				    self.send(msg);
 				});
 				self.sendQueue = [];
@@ -33,6 +33,7 @@ hakobiyaModule.factory('Hakobiya', function($rootScope) {
 					case 's': //set
 						var qualified = data.c + "." + data.n;
 						$rootScope.$broadcast(qualified, data.v);
+						break;
 					case '!': //error
 						console.log(data);
 						break;
@@ -47,16 +48,24 @@ hakobiyaModule.factory('Hakobiya', function($rootScope) {
 			}
 		},
 		join: function(channel) {
-			this.send({
-				x: 'j',
-				c: channel
-			});
+			if (!this.jpCount[channel] || this.jpCount[channel] == 0) {
+				this.send({
+					x: 'j',
+					c: channel
+				});
+				this.jpCount[channel] = 1;
+			} else {
+				this.jpCount[channel] += 1;
+			}
 		},
 		part: function(channel) {
-			this.send({
-				x: 'p',
-				c: channel
-			});
+			this.jpCount[channel] -= 1;
+			if (this.jpCount[channel] < 1) {
+				this.send({
+					x: 'p',
+					c: channel
+				});
+			}
 		},
 		get: function(channel, vars) {
 			this.send({
@@ -76,7 +85,7 @@ hakobiyaModule.factory('Hakobiya', function($rootScope) {
 		bind: function($scope, chvar, binding) {
 			// is our channel null? if so we have to do this later...
 			var ch = $scope[chvar];
-			if (ch == null) {
+			if (!ch) {
 				var self = this;
 				var unreg = $scope.$watch(chvar, function(newVal, oldVal) {
 					self._do_bind($scope, newVal, binding);
@@ -92,7 +101,6 @@ hakobiyaModule.factory('Hakobiya', function($rootScope) {
 		_do_bind: function($scope, chan, binding) {
 			var self = this;
 
-			// TODO: some kind of reference counting auto join/part thing
 			this.join(chan);
 			$scope.$on("$destroy", function() {
 				self.part(chan);

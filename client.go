@@ -27,7 +27,7 @@ func (c *client) writer() {
 		select {
 		case msg, ok := <-c.sendq:
 			if !ok {
-				log.Println("Stopping SendQ")
+				// our work here is done
 				return
 			}
 			err := websocket.JSON.Send(c.socket, msg)
