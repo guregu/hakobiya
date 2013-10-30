@@ -15,12 +15,14 @@ const (
 	UserVar
 	MagicVar
 	SystemVar
+	BroadcastVar
 )
 
 var sigilTable = map[uint8]varType{
 	'%': UserVar,
 	'&': MagicVar,
 	'$': SystemVar,
+	'#': BroadcastVar,
 }
 
 type channel struct {
@@ -107,6 +109,18 @@ func (ch *channel) run() {
 	log.Printf("Running channel: %s", ch.name)
 	for {
 		select {
+		case msg := <-ch.send: // broadcast messages
+			sigil, bname := msg.To[0], msg.To[1:] // TODO: bounds check
+			log.Printf("[%s] msg from %v to %v: %v", ch.name, msg.From, msg.To, msg.Value)
+			if sigil != '#' {
+				log.Printf("[%s] invalid broadcast to %s", ch.name, msg.To)
+			}
+			if _, ok := ch.broadcasts[bname]; ok {
+				// TODO: type-checking, magic?
+				ch.notify(msg.To, msg.Value)
+			} else {
+				log.Printf("[%s] unknown broadcast to %s", ch.name, msg.To)
+			}
 		case c := <-ch.join:
 			ch.listeners[c] = true
 
@@ -141,7 +155,7 @@ func (ch *channel) run() {
 				ch.notify("$listeners", ct)
 			}
 		case gtr := <-ch.get:
-			prefix, vname := gtr.Var[0], gtr.Var[1:]
+			prefix, vname := gtr.Var[0], gtr.Var[1:] // TODO: bounds check
 			vtype, exists := ch.index[vname]
 			if !exists {
 				gtr.From.send(Error("g", "no such var"))
@@ -225,6 +239,13 @@ func registerChannel(ch *channel) {
 	channelTableMutex.Unlock()
 
 	go ch.run()
+}
+
+func channelExists(name string) bool {
+	channelTableMutex.RLock()
+	defer channelTableMutex.RUnlock()
+	_, exists := channelTable[name]
+	return exists
 }
 
 func getChannel(name string) *channel {

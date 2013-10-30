@@ -14,21 +14,21 @@
 
 
 			function TestCtrl($scope, Hakobiya) {
-				$scope.channel = null;
+				$scope.channel = "Q121";
 				$scope.typers = 0;
 				$scope.typing = false;
 				$scope.users = 0;
 				$scope.atleastonetyper = null;
+				$scope.messages = [];
 
 				Hakobiya.bind($scope, "channel",
 				{
 					"typers": "&typers",
 					"typing": "%typing",
 					"users": "$listeners",
-					"atleastonetyper": "&is_someone_typing"
+					"atleastonetyper": "&is_someone_typing",
+					"messages": "#answer"
 				});
-
-				$scope.channel = "Q121"
 			}
 		</script>
 	</head>
@@ -37,5 +37,7 @@
 		{{typers}} typers <br />
 		{{atleastonetyper}} <br />
 		<button ng-click="typing = !typing">Clicky</button>
+		<hr>
+		{{messages}}
 	</body>
 </html>

@@ -5,6 +5,7 @@ import "github.com/BurntSushi/toml"
 type config struct {
 	Server   serverConfig
 	Channels []channelConfig `toml:"channel"`
+	API      apiConfig
 }
 
 type serverConfig struct {
@@ -20,6 +21,12 @@ type channelConfig struct {
 	Vars      map[string]varDef `toml:"var"`
 	Magic     map[string]magicDef
 	Broadcast map[string]broadcast
+}
+
+type apiConfig struct {
+	Enabled bool
+	Path    string
+	Key     string
 }
 
 func (cfg channelConfig) apply(ch *channel) {

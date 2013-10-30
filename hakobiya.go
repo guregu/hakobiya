@@ -2,6 +2,7 @@ package main
 
 import (
 	"code.google.com/p/go.net/websocket"
+	"github.com/drone/routes"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -17,11 +18,25 @@ func main() {
 		log.Printf("Channel: %s", ccfg.Prefix)
 		channelConfigs[ccfg.Prefix[0]] = ccfg
 	}
-
 	// start http services
 	log.Printf("Starting Hakobiya %s @ %s%s \n", serverConf.Name, serverConf.Bind, serverConf.Path)
-	http.HandleFunc("/", index)
 	http.Handle(serverConf.Path, websocket.Handler(serveWS))
+	http.HandleFunc("/", index)
+	// api
+	if conf.API.Enabled {
+		apiKey = conf.API.Key
+		apiPath := conf.API.Path
+		if apiPath == "" {
+			// the default api path is /api/
+			apiPath = "/api"
+		}
+		mux := routes.New()
+		mux.Post(apiPath+"/:channel/broadcast", apiBroadcast)
+		mux.Get(apiPath+"/:channel/debug", apiDebug)
+		mux.Filter(apiKeyFilter)
+		http.Handle(apiPath+"/", mux)
+		log.Printf("API open at %s/", apiPath)
+	}
 	// for testing purposes
 	http.Handle("/js/", http.StripPrefix("/js/", http.FileServer(http.Dir("js"))))
 	http.ListenAndServe(serverConf.Bind, nil)

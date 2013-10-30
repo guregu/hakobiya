@@ -6,6 +6,12 @@ name = "QA+"
 bind = "localhost:8080"
 path = "/ws"
 
+[api]
+enabled = true
+path = "/api"
+key = "abcdefg"
+#allowedIPs = ["127.0.0.1"]
+
 #######################
 # Q: Question channel
 #######################

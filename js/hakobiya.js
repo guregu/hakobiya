@@ -106,7 +106,7 @@ hakobiyaModule.factory('Hakobiya', function($rootScope) {
 				self.part(chan);
 			});
 
-			// here we go...
+			// let the binding begin
 			var hvars = [];
 			angular.forEach(binding, function(hvar, scopevar) {
 				hvars.push(hvar);
