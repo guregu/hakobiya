@@ -63,6 +63,7 @@ key = "turtles"
 `[[channel]]` 
 
 Defines channels (note the double brackets). Channels are distinguished by their first letter (the `prefix` value) and are created on-the-fly when joined by a client. Any string after the prefix is OK for a channel name.
+
 | Name | Type | Required? | Default | Description |
 | ---- | ---- | --------- | ------- | ----------- |
 | prefix | char | **required** | | Distinguishing prefix |
@@ -138,12 +139,14 @@ A wire's input and output is defined separately. The input definition is **requi
 
 #### Wire input (**required**)
 `[channel.wire.(variable name).input]`
+
 | Name | Type | Required? | Default | Description |
 | ---- | ---- | --------- | ------- | ----------- |
 | type | type | **required** | | The type of the input |
 
 #### Wire output (*optional*)
 `[channel.wire.(variable name).output]`
+
 | Name | Type | Required? | Default | Description |
 | ---- | ---- | --------- | ------- | ----------- |
 | type | type | **required** | | Output type, `"object"` when using rewrite rules |
