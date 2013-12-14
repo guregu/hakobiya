@@ -2,6 +2,7 @@ package main
 
 import "sync"
 import "log"
+import "errors"
 
 var channelTable = make(map[string]*channel)
 var channelTableMutex = &sync.RWMutex{}
@@ -16,6 +17,7 @@ const (
 	MagicVar
 	SystemVar
 	BroadcastVar
+	WireVar
 )
 
 var sigilTable = map[uint8]varType{
@@ -23,6 +25,19 @@ var sigilTable = map[uint8]varType{
 	'&': MagicVar,
 	'$': SystemVar,
 	'#': BroadcastVar,
+	'=': WireVar,
+}
+
+type broadcast struct {
+	Type     string
+	ReadOnly bool
+}
+
+type wire struct {
+	inputType  jsType
+	outputType jsType
+	rewrite    bool
+	transform  func(*channel, wire, *client, interface{}) interface{}
 }
 
 type channel struct {
@@ -33,6 +48,7 @@ type channel struct {
 	index      map[string]varType
 	types      map[string]jsType
 	broadcasts map[string]broadcast
+	wires      map[string]wire
 	vars       map[string]interface{}
 	uservars   map[string]map[*client]interface{}
 	magic      map[string]func() interface{}
@@ -59,6 +75,7 @@ func newChannel(name string) *channel {
 		index:      make(map[string]varType),
 		types:      make(map[string]jsType),
 		broadcasts: make(map[string]broadcast),
+		wires:      make(map[string]wire),
 		vars:       make(map[string]interface{}),
 		uservars:   make(map[string]map[*client]interface{}),
 		magic:      make(map[string]func() interface{}),
@@ -72,6 +89,7 @@ func newChannel(name string) *channel {
 		part: make(chan *client),
 	}
 	cfg.apply(ch)
+	log.Printf("%#v", ch)
 	return ch
 }
 
@@ -103,6 +121,30 @@ func (ch *channel) invalidate(vname string) {
 			}
 		}
 	}
+}
+
+func (ch *channel) value(fullName string, from *client) (val interface{}, e error) {
+	// TODO: proper unicode handling
+	prefix, vname := fullName[0], fullName[1:] // TODO: bounds check
+	vtype, exists := ch.index[vname]
+	if !exists {
+		log.Printf("[%s] unknown var: %s", ch.name, vname)
+		e = errors.New("unknown var: " + fullName)
+	} else if !checkPrefix(prefix, vtype) {
+		log.Printf("[%s] mismatched sigil: %s for %v", ch.name, fullName, vtype)
+		e = errors.New("mismatched sigil")
+	}
+
+	switch vtype {
+	case UserVar:
+		val = ch.uservars[vname][from]
+	case MagicVar:
+		val = ch.cache[vname]
+	case SystemVar:
+		val = ch.vars["$"+vname]
+	}
+
+	return
 }
 
 func (ch *channel) run() {
@@ -155,23 +197,10 @@ func (ch *channel) run() {
 				ch.notify("$listeners", ct)
 			}
 		case gtr := <-ch.get:
-			prefix, vname := gtr.Var[0], gtr.Var[1:] // TODO: bounds check
-			vtype, exists := ch.index[vname]
-			if !exists {
-				gtr.From.send(Error("g", "no such var"))
+			val, err := ch.value(gtr.Var, gtr.From)
+			if err != nil {
+				gtr.From.send(Error("g", err.Error()))
 				continue
-			}
-			if !checkPrefix(prefix, vtype) {
-				log.Printf("Mismatched sigil: %s for %v", gtr.Var, vtype)
-			}
-			var val interface{}
-			switch vtype {
-			case UserVar:
-				val = ch.uservars[vname][gtr.From]
-			case MagicVar:
-				val = ch.cache[vname]
-			case SystemVar:
-				val = ch.vars["$"+vname]
 			}
 			msg := &setRequest{
 				Cmd:     "s",
@@ -184,7 +213,7 @@ func (ch *channel) run() {
 			prefix, vname := sttr.Var[0], sttr.Var[1:]
 			vtype, exists := ch.index[vname]
 			if !exists {
-				sttr.From.send(Error("g", "no such var"))
+				sttr.From.send(Error("g", "no such var "+sttr.Var))
 				continue
 			}
 			if !checkPrefix(prefix, vtype) {
@@ -203,6 +232,14 @@ func (ch *channel) run() {
 				}
 			case ChannelVar:
 				// TODO
+			case WireVar:
+				w := ch.wires[vname]
+				send := sttr.Value
+				if w.rewrite {
+					send = w.transform(ch, w, sttr.From, sttr.Value)
+				}
+				// TODO: normalize sttr.Var
+				ch.notify(sttr.Var, send)
 			}
 		}
 	}
@@ -223,11 +260,6 @@ type setter struct {
 	From  *client
 	Var   string
 	Value interface{}
-}
-
-type broadcast struct {
-	Type     string
-	ReadOnly bool
 }
 
 func registerChannel(ch *channel) {

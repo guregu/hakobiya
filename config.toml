@@ -13,6 +13,26 @@ key = "abcdefg"
 #allowedIPs = ["127.0.0.1"]
 
 #######################
+# C: Chat room
+#######################
+[[channel]]
+prefix = "c"
+expose = ["$listeners"]
+	[channel.var.name]
+		type = "string"
+	[channel.wire.chat]
+		[channel.wire.chat.input]
+			type = "string"
+		[channel.wire.chat.output]
+			type = "object"
+			[channel.wire.chat.output.rewrite]
+				name = "%name" #c.%name
+				msg = "$input"
+				test = "'literal"
+
+
+
+#######################
 # Q: Question channel
 #######################
 [[channel]]

@@ -12,6 +12,21 @@
 				Hakobiya.connect("ws://localhost:8080/ws");
 			});
 
+			function ChatCtrl($scope, Hakobiya) {
+				$scope.channel = "c12345";
+				$scope.name = "Guest";
+				$scope.chat = undefined;
+				$scope.users = 0;
+
+				$scope.input = "";
+
+				Hakobiya.bind($scope, "channel",
+				{
+					"name": "%name",
+					"chat": "=chat",
+					"users": "$listeners",
+				});
+			}
 
 			function TestCtrl($scope, Hakobiya) {
 				$scope.channel = "Q121";
@@ -32,7 +47,17 @@
 			}
 		</script>
 	</head>
-	<body ng-controller="TestCtrl">
+	<body ng-controller="ChatCtrl">
+		{{users}} users <br />
+		<ol>
+			<li ng-repeat="m in chat.msgs">
+				<b>{{m.name}}</b>: {{m.msg}}
+			</li>
+		</ol>
+		<input type="text" ng-model="name"> <input type="text" ng-model="input" placeholder="Type stuff">
+		<button ng-click="chat.send(input); input = ''">Send</button>
+	</body>
+<!-- 	<body ng-controller="TestCtrl">
 		{{users}} users <br />
 		{{typers}} typers <br />
 		{{atleastonetyper}} <br />
@@ -40,4 +65,4 @@
 		<hr>
 		{{messages}}
 	</body>
-</html>
+ --></html>

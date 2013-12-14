@@ -35,7 +35,7 @@ hakobiyaModule.factory('Hakobiya', function($rootScope) {
 						$rootScope.$broadcast(qualified, data.v);
 						break;
 					case '!': //error
-						console.log(data);
+						console.log("error (" + data.w + "): " + data.m);
 						break;
 				}
 			}
@@ -48,7 +48,7 @@ hakobiyaModule.factory('Hakobiya', function($rootScope) {
 			}
 		},
 		join: function(channel) {
-			if (!this.jpCount[channel] || this.jpCount[channel] == 0) {
+			if (!this.jpCount[channel]) {
 				this.send({
 					x: 'j',
 					c: channel
@@ -107,10 +107,15 @@ hakobiyaModule.factory('Hakobiya', function($rootScope) {
 			});
 
 			// let the binding begin
-			var hvars = [];
+			var request = [];
 			angular.forEach(binding, function(hvar, scopevar) {
-				hvars.push(hvar);
 				var sigil = hvar[0];
+				if (!$scope[scopevar]) {
+					var notRequestable = "=";
+					if (notRequestable.indexOf(sigil) == -1) {
+						request.push(hvar);
+					}
+				}
 				var qualified = chan + "." + hvar;
 				switch (sigil) {
 					case '&': // magic var, one-way server -> client binding
@@ -131,7 +136,7 @@ hakobiyaModule.factory('Hakobiya', function($rootScope) {
 							self.set(chan, hvar, newVal);
 						});
 						break;
-					case '#': // broadcasts, one way for now (TODO)
+					case '#': // broadcasts, one way growing array
 						$scope.$on(qualified, function(e, value) {
 							$scope.$apply(function(scope) {
 								if (scope[scopevar]) {
@@ -142,12 +147,31 @@ hakobiyaModule.factory('Hakobiya', function($rootScope) {
 							});
 						});
 						break;
+					case '=': // channel, like a two-way broadcast
+						$scope[scopevar] = {
+							msgs: [],
+							$on: function(func) {
+								return $scope.$on(qualified, func);
+							},
+							send: function(data) {
+								self.set(chan, hvar, data);
+							},
+							toString: function() {
+								return qualified;
+							}
+						};
+						$scope.$on(qualified, function(e, value) {
+							$scope.$apply(function(scope) {
+								scope[scopevar].msgs.push(value);
+							});
+						});
+						break;
 					default:
 						console.log("ERROR: unknown sigil " + hvar);
 						break;
 				}
 			});
-			this.get(chan, hvars);	
+			this.get(chan, request);	
 		}
 	};
 	return Hakobiya;
