@@ -18,11 +18,9 @@
 				$scope.chat = undefined;
 				$scope.users = 0;
 
-				$scope.input = "";
-
 				Hakobiya.bind($scope, "channel",
 				{
-					"name": "%name",
+					"name": "%username",
 					"chat": "=chat",
 					"users": "$listeners",
 				});

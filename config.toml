@@ -20,9 +20,11 @@ prefix = "c"
 expose = ["$listeners"]
 	[channel.var.name]
 		type = "string"
+		default = "Guest-%d"
 	[channel.wire.chat]
 		[channel.wire.chat.input]
 			type = "string"
+			trim = 1024 # trim to 1024 chars
 		[channel.wire.chat.output]
 			type = "object"
 			[channel.wire.chat.output.rewrite]
