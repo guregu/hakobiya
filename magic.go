@@ -127,6 +127,49 @@ func _any_same(ch *channel, src string, params map[string]interface{}) func() in
 	}
 }
 
+func _any_all_equal(ch *channel, src string, params map[string]interface{}) func() interface{} {
+	cmp, ok := params["value"]
+	if !ok {
+		panic("magic [any].all equal (using " + src + ") - missing 'value' parameter!")
+	}
+	return func() interface{} {
+		values, _ := ch.values(src)
+
+		if len(values) == 0 {
+			return false
+		}
+
+		for _, v := range values {
+			if v != cmp {
+				return false
+			}
+		}
+		return true
+	}
+}
+
+func _any_any_equal(ch *channel, src string, params map[string]interface{}) func() interface{} {
+	cmp, ok := params["value"]
+	if !ok {
+		panic("magic [any].any equal (using " + src + ") - missing 'value' parameter!")
+	}
+	return func() interface{} {
+		values, _ := ch.values(src)
+
+		if len(values) == 0 {
+			return false
+		}
+
+		for _, v := range values {
+			if v == cmp {
+				return true
+			}
+		}
+
+		return false
+	}
+}
+
 func init() {
 	// boolean magic
 	RegisterMagic(magic{jsBool, "any"}, _bool_any)
@@ -136,4 +179,6 @@ func init() {
 	RegisterMagic(magic{jsInt, "sum"}, _int_sum)
 	// any type magic
 	RegisterMagic(magic{jsAnything, "same"}, _any_same)
+	RegisterMagic(magic{jsAnything, "all equal"}, _any_all_equal)
+	RegisterMagic(magic{jsAnything, "any equal"}, _any_any_equal)
 }

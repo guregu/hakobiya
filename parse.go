@@ -70,6 +70,17 @@ func (cfg channelConfig) apply(ch *channel) {
 			panic("magic var " + varName + " has invalid source var " + m.Src + ", expected a uservar (did you forget the %prefix?)")
 		}
 		v := cfg.Vars[srcVar]
+		// you can use param as a shortcut for defining a params table to just set 'value'
+		if m.Param != nil {
+			if m.Params == nil {
+				m.Params = make(map[string]interface{})
+			} else {
+				if _, exists := m.Params["value"]; exists {
+					panic("magic " + varName + " has both param and params['value'] set, only set one!")
+				}
+			}
+			m.Params["value"] = m.Param
+		}
 		ch.magic[varName] = makeMagic(ch, m.Src, magic{v.Type, m.Func}, m.Params)
 		ch.deps[srcVar] = append(ch.deps[srcVar], varName)
 		// とりあえず run it once
@@ -111,6 +122,7 @@ type varDef struct {
 type magicDef struct {
 	Src    string
 	Func   string
+	Param  interface{} // shortcut for Params["value"]
 	Params map[string]interface{}
 }
 

@@ -201,7 +201,7 @@ func (ch *channel) run() {
 				}
 			}
 
-			// $listeners
+			// update $listeners
 			ct := len(ch.listeners)
 			ch.vars["$listeners"] = ct
 			if ch.index["listeners"] == SystemVar {
