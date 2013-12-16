@@ -31,7 +31,7 @@ var sigilTable = map[uint8]varType{
 }
 
 type broadcast struct {
-	Type     string
+	Type     jsType
 	ReadOnly bool
 }
 
@@ -57,7 +57,6 @@ type channel struct {
 	cache      map[string]interface{}
 	deps       map[string][]string
 
-	send chan message
 	get  chan getter
 	set  chan setter
 	join chan *client
@@ -83,7 +82,6 @@ func newChannel(name string) *channel {
 		cache:      make(map[string]interface{}),
 		deps:       make(map[string][]string),
 
-		send: make(chan message),
 		get:  make(chan getter),
 		set:  make(chan setter),
 		join: make(chan *client),
@@ -114,11 +112,11 @@ func (ch *channel) notify(fullName string, value interface{}) {
 func (ch *channel) invalidate(varName string) {
 	if _, exists := ch.deps[varName]; exists {
 		for _, dep := range ch.deps[varName] {
-			oldval := ch.cache[dep]
-			newval := ch.magic[dep]()
-			if oldval != newval {
-				ch.cache[dep] = newval
-				ch.notify("&"+dep, newval)
+			oldVal := ch.cache[dep]
+			newVal := ch.magic[dep]()
+			if oldVal != newVal {
+				ch.cache[dep] = newVal
+				ch.notify("&"+dep, newVal)
 			}
 		}
 	}
@@ -172,21 +170,10 @@ func (ch *channel) values(fullName string) (val map[*client]interface{}, e error
 
 func (ch *channel) run() {
 	log.Printf("Running channel: %s", ch.name)
+	defer unregisterChannel(ch)
+
 	for {
 		select {
-		//TODO: get rid of ch.send and have everything go through ch.set
-		case msg := <-ch.send: // broadcast messages
-			sigil, name := msg.To[0], msg.To[1:] // TODO: bounds check
-			log.Printf("[%s] msg from %v to %v: %v", ch.name, msg.From, msg.To, msg.Value)
-			if sigil != '#' {
-				log.Printf("[%s] invalid broadcast to %s", ch.name, msg.To)
-			}
-			if _, ok := ch.broadcasts[name]; ok {
-				// TODO: type-checking, magic?
-				ch.notify(msg.To, msg.Value)
-			} else {
-				log.Printf("[%s] unknown broadcast to %s", ch.name, msg.To)
-			}
 		case c := <-ch.join:
 			ch.listeners[c] = true
 
@@ -219,6 +206,12 @@ func (ch *channel) run() {
 			ch.vars["$listeners"] = ct
 			if ch.index["listeners"] == SystemVar {
 				ch.notify("$listeners", ct)
+			}
+
+			// die?
+			if ct == 0 {
+				log.Printf("Dying: %s", ch.name)
+				return
 			}
 		case getr := <-ch.get:
 			val, err := ch.value(getr.Var, getr.From)
@@ -253,10 +246,22 @@ func (ch *channel) run() {
 					ch.uservars[varName][setr.From] = setr.Value
 					ch.invalidate(varName)
 				} else {
-					setr.From.send(Error("s", "invalid type for "+varName))
+					setr.From.send(Error("s", "invalid type for "+setr.Var))
 				}
 			case ChannelVar:
 				// TODO
+			case BroadcastVar:
+				b := ch.broadcasts[varName]
+				if setr.From != nil {
+					// TODO: should this be set by ReadOnly?
+					setr.From.send(Error("s", "broadcast is read only: "+setr.Var))
+				} else {
+					if b.Type.is(setr.Value) {
+						ch.notify(setr.Var, setr.Value)
+					} else {
+						log.Printf("[%s] invalid type for broadcast %s (%v)", ch.name, setr.Var, setr.Value)
+					}
+				}
 			case WireVar:
 				w := ch.wires[varName]
 				send := setr.Value
@@ -267,12 +272,6 @@ func (ch *channel) run() {
 			}
 		}
 	}
-}
-
-type message struct {
-	From  *client
-	To    string
-	Value interface{}
 }
 
 type getter struct {
@@ -288,18 +287,30 @@ type setter struct {
 
 func registerChannel(ch *channel) {
 	channelTableMutex.Lock()
+	defer channelTableMutex.Unlock()
+
 	if _, exists := channelTable[ch.name]; exists {
 		panic("Remaking channel: " + ch.name)
 	}
 	channelTable[ch.name] = ch
-	channelTableMutex.Unlock()
 
 	go ch.run()
+}
+
+func unregisterChannel(ch *channel) {
+	channelTableMutex.Lock()
+	defer channelTableMutex.Unlock()
+
+	if _, exists := channelTable[ch.name]; !exists {
+		panic("Deleting non-existent channel: " + ch.name)
+	}
+	delete(channelTable, ch.name)
 }
 
 func channelExists(name string) bool {
 	channelTableMutex.RLock()
 	defer channelTableMutex.RUnlock()
+
 	_, exists := channelTable[name]
 	return exists
 }
@@ -308,6 +319,7 @@ func getChannel(name string) *channel {
 	channelTableMutex.RLock()
 	ch, exists := channelTable[name]
 	channelTableMutex.RUnlock()
+
 	if !exists {
 		ch = newChannel(name)
 		if ch != nil {

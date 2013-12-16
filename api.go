@@ -40,11 +40,11 @@ func apiBroadcast(w http.ResponseWriter, r *http.Request) {
 	ch := getChannel(name)
 	breq := broadcastRequest{}
 	routes.ReadJson(r, &breq)
-	msg := message{
-		To:    breq.To,
+	msg := setter{
+		Var:   breq.To,
 		Value: breq.Value,
 	}
-	ch.send <- msg
+	ch.set <- msg
 	routes.ServeJson(w, apiResponse{API_OK, "sent"})
 }
 
