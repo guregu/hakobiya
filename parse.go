@@ -30,21 +30,20 @@ type apiConfig struct {
 	Key     string
 }
 
+// TODO: move validation elsewhere (only do it once)
 func (cfg channelConfig) apply(ch *channel) {
-	// TODO: validate jsTypes
-
 	// prefix
 	ch.prefix = cfg.Prefix
 	// restrict
 	ch.restrict = cfg.Restrict
 	// broadcasts
-	for b_name, b := range cfg.Broadcast {
-		ch.broadcasts[b_name] = b
+	for name, broadcastCfg := range cfg.Broadcast {
+		ch.broadcasts[name] = broadcastCfg
 	}
 	// expose
 	for _, ex := range cfg.Expose {
-		v_name := ex[1:]
-		ch.index[v_name] = SystemVar
+		varName := ex[1:]
+		ch.index[varName] = SystemVar
 		switch ex {
 		case "$listeners":
 			ch.magic["$listeners"] = func() interface{} {
@@ -55,63 +54,64 @@ func (cfg channelConfig) apply(ch *channel) {
 		}
 	}
 	// user vars
-	for v_name, v := range cfg.Vars {
-		ch.index[v_name] = UserVar
-		ch.uservars[v_name] = make(map[*client]interface{})
-		ch.types[v_name] = jsType(v.Type) // TODO: validate types
+	for varName, v := range cfg.Vars {
+		ch.index[varName] = UserVar
+		ch.uservars[varName] = make(map[*client]interface{})
+		ch.types[varName] = v.Type
+		validateOrPanic(v.Type, ch.prefix, varName)
 		// TODO set read only
 	}
 	// TODO: channel vars?
 	// magic
-	for v_name, m := range cfg.Magic {
-		ch.index[v_name] = MagicVar
-		v := cfg.Vars[m.Var]
-		ch.magic[v_name] = magic_func(ch, m.Var, v.Type, m.Map)
-		ch.deps[m.Var] = append(ch.deps[m.Var], v_name)
+	for varName, m := range cfg.Magic {
+		ch.index[varName] = MagicVar
+		prefix, srcVar := m.Src[:1][0], m.Src[1:]
+		if !checkPrefix(prefix, UserVar) {
+			panic("magic var " + varName + " has invalid source var " + m.Src + ", expected a uservar (did you forget the %prefix?)")
+		}
+		v := cfg.Vars[srcVar]
+		ch.magic[varName] = makeMagic(ch, m.Src, magic{v.Type, m.Func}, m.Params)
+		ch.deps[srcVar] = append(ch.deps[srcVar], varName)
 		// とりあえず run it once
-		ch.cache[v_name] = ch.magic[v_name]()
+		ch.cache[varName] = ch.magic[varName]()
 	}
 	// wires
 	// TODO: some kind of generic function chain thingy to make the logic here more sane
-	// TODO: trim
-	for v_name, w := range cfg.Wire {
-		ch.index[v_name] = WireVar
-		wyre := wire{} // our baby wire
-		if w.Input == nil {
-			panic("no input definition for wire: " + v_name)
+	for varName, wireCfg := range cfg.Wire {
+		ch.index[varName] = WireVar
+		w := wire{} // our baby wire
+		if wireCfg.Input == nil {
+			panic("no input definition for wire: " + varName)
 		} else {
-			wyre.inputType = w.Input.Type
+			w.inputType = wireCfg.Input.Type
+			validateOrPanic(wireCfg.Input.Type, ch.prefix, varName)
 		}
-		if w.Output == nil {
-			wyre.outputType = wyre.inputType
-			// 	if w.Input.Trim > 0 {
-			// 		switch (w.Input.Type) {
-			// 		case jsString:
-			// 		wyre.rewrite = true
-			// 		wyre.transform = func(*channel, wire, *client, interface{}) {}
-			// 	}
+		if wireCfg.Output == nil {
+			w.outputType = w.inputType
 		} else {
-			wyre.outputType = w.Output.Type
-			if w.Output.hasRewrite() {
-				wyre.rewrite = true
-				wyre.transform = func(ch *channel, _wire wire, from *client, input interface{}) interface{} {
-					return w.Output.Rewrite.rewrite(ch, from, input)
+			w.outputType = wireCfg.Output.Type
+			validateOrPanic(wireCfg.Output.Type, ch.prefix, varName)
+			if wireCfg.Output.hasRewrite() {
+				w.rewrite = true
+				w.transform = func(ch *channel, _wire wire, from *client, input interface{}) interface{} {
+					return wireCfg.Output.Rewrite.rewrite(ch, from, input)
 				}
 			}
 		}
-		ch.wires[v_name] = wyre
+		ch.wires[varName] = w
 	}
 }
 
 type varDef struct {
-	Type     string
+	Type     jsType
 	ReadOnly bool
 	Default  interface{}
 }
 
 type magicDef struct {
-	Var string
-	Map string
+	Src    string
+	Func   string
+	Params map[string]interface{}
 }
 
 type wireDef struct {
@@ -136,22 +136,22 @@ func (w wireDefOutput) hasRewrite() bool {
 type rewriteDef map[string]string
 
 func (rw rewriteDef) rewrite(ch *channel, from *client, input interface{}) map[string]interface{} {
-	ret := make(map[string]interface{})
+	transformed := make(map[string]interface{})
 	for fieldName, hVar := range rw {
 		// literals:
 		if hVar[0] == '\'' {
-			ret[fieldName] = hVar[1:]
+			transformed[fieldName] = hVar[1:]
 		} else {
 			switch hVar {
 			case "$input":
-				ret[fieldName] = input
+				transformed[fieldName] = input
 			default:
 				v, _ := ch.value(hVar, from)
-				ret[fieldName] = v
+				transformed[fieldName] = v
 			}
 		}
 	}
-	return ret
+	return transformed
 }
 
 func parseConfig(file string) config {
@@ -161,4 +161,10 @@ func parseConfig(file string) config {
 		panic(err)
 	}
 	return conf
+}
+
+func validateOrPanic(t jsType, prefix, from string) {
+	if !t.valid() {
+		panic("[" + prefix + "] invalid type: '" + string(t) + "' for var " + from)
+	}
 }

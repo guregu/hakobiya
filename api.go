@@ -1,8 +1,11 @@
 package main
 
-import "net/http"
-import "github.com/drone/routes"
-import "log"
+import (
+	"log"
+	"net/http"
+
+	"github.com/drone/routes"
+)
 
 // TODO: make this more better/secure
 var apiKey string

@@ -103,15 +103,15 @@ Magic variables are computed values based on user variables.
 
 | Name | Type | Required? | Default | Description |
 | ---- | ---- | --------- | ------- | ----------- |
-| var | string | **required** | | Name of the user variable to base calculations on |
-| map | string | **required** | | Name of the function to reduce the values (TODO: rename this)
+| src  | string | **required** | | Source variable to base calculations on |
+| func | string | **required** | | Name of the function to reduce the values, see the Magic docs |
 
 #### Example
 Defines a magic variable called `&typers` that counts the number of users who have `%typing` set to `true`.
 ```toml
 [channel.magic.typers]
-	var = "typing"
-	map = "sum"
+	src  = "%typing"
+	func = "sum"
 ```
 
 
@@ -162,7 +162,6 @@ Defines a wire called `=chat` that takes a string as input and rewrites it as an
 [channel.wire.chat] 
 	[channel.wire.chat.input]
 		type = "string"
-		trim = 1024 # trim to 1024 chars
 	[channel.wire.chat.output]
 		type = "object"
 		[channel.wire.chat.output.rewrite]
@@ -205,4 +204,14 @@ $scope.$on("c12345.=chat", function(evt, value) {
 ```
 Event names have the format of `(channel).(variable)`.
 
-More documentation coming soon!
+Also, don't forget to connect.
+```javascript
+myModule.run(function (Hakobiya) {
+				Hakobiya.connect("ws://0.0.0.0/chat");
+			});
+```
+
+# HTTP API
+You can choose to expose an HTTP API, letting you send broadcasts to clients.
+
+Proper documentation coming soon!

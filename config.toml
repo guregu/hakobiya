@@ -2,8 +2,8 @@
 # Hakobiya Server Config
 #######################
 [server]
-name = "QA+"
-bind = "localhost:8080"
+name = "Test Server"
+bind = ":8080"
 path = "/ws"
 
 [api]
@@ -24,7 +24,6 @@ expose = ["$listeners"]
 	[channel.wire.chat]
 		[channel.wire.chat.input]
 			type = "string"
-			trim = 1024 # trim to 1024 chars
 		[channel.wire.chat.output]
 			type = "object"
 			[channel.wire.chat.output.rewrite]
@@ -55,11 +54,11 @@ expose = ["$listeners"] #Q.$listeners
 	[channel.magic]
 		# Q.&typers - how many users are typing
 		[channel.magic.typers]
-			var = "typing"
-			map = "sum"
+			src = "%typing"
+			func = "sum"
 		[channel.magic.is_someone_typing]
-			var = "typing"
-			map = "any"
+			src = "%typing"
+			func = "any"
 
 #######################
 # @: User notifcations  

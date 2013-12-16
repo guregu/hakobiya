@@ -1,9 +1,10 @@
 package main
 
 import (
-	"code.google.com/p/go.net/websocket"
 	"encoding/json"
 	"log"
+
+	"code.google.com/p/go.net/websocket"
 )
 
 type client struct {

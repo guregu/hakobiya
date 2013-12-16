@@ -2,7 +2,7 @@
 <html ng-app="testGuy">
 	<head>
 		<title>Hakobiya test</title>
-		<script src="https://ajax.googleapis.com/ajax/libs/angularjs/1.0.8/angular.min.js"></script>
+		<script src="https://ajax.googleapis.com/ajax/libs/angularjs/1.2.5/angular.min.js"></script>
 		<script src="/js/hakobiya.js"></script>
 		<script>
 			// stuff
@@ -20,7 +20,7 @@
 
 				Hakobiya.bind($scope, "channel",
 				{
-					"name": "%username",
+					"name": "%name",
 					"chat": "=chat",
 					"users": "$listeners",
 				});
@@ -45,22 +45,25 @@
 			}
 		</script>
 	</head>
-	<body ng-controller="ChatCtrl">
-		{{users}} users <br />
-		<ol>
-			<li ng-repeat="m in chat.msgs">
-				<b>{{m.name}}</b>: {{m.msg}}
-			</li>
-		</ol>
-		<input type="text" ng-model="name"> <input type="text" ng-model="input" placeholder="Type stuff">
-		<button ng-click="chat.send(input); input = ''">Send</button>
-	</body>
-<!-- 	<body ng-controller="TestCtrl">
-		{{users}} users <br />
-		{{typers}} typers <br />
-		{{atleastonetyper}} <br />
-		<button ng-click="typing = !typing">Clicky</button>
+	<body>
+		<div ng-controller="ChatCtrl">
+			{{users}} users <br />
+			<ol>
+				<li ng-repeat="m in chat.msgs">
+					<b>{{m.name}}</b>: {{m.msg}}
+				</li>
+			</ol>
+			<input type="text" ng-model="name"> <input type="text" ng-model="input" placeholder="Type stuff">
+			<button ng-click="chat.send(input); input = ''">Send</button>
+		</div>
 		<hr>
-		{{messages}}
+		<div ng-controller="TestCtrl">
+			{{users}} users <br />
+			{{typers}} typers <br />
+			{{atleastonetyper}} <br />
+			<button ng-click="typing = !typing">Clicky</button>
+			<hr>
+			{{messages}}
+		</div>
 	</body>
- --></html>
+</html>

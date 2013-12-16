@@ -1,11 +1,12 @@
 package main
 
 import (
-	"code.google.com/p/go.net/websocket"
-	"github.com/drone/routes"
 	"io/ioutil"
 	"log"
 	"net/http"
+
+	"code.google.com/p/go.net/websocket"
+	"github.com/drone/routes"
 )
 
 var serverConf serverConfig
