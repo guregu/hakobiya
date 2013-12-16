@@ -17,12 +17,14 @@
 				$scope.name = "Guest";
 				$scope.chat = undefined;
 				$scope.users = 0;
+				$scope.sameName = false;
 
 				Hakobiya.bind($scope, "channel",
 				{
 					"name": "%name",
 					"chat": "=chat",
 					"users": "$listeners",
+					"sameName": "&same_name"
 				});
 			}
 
@@ -48,6 +50,7 @@
 	<body>
 		<div ng-controller="ChatCtrl">
 			{{users}} users <br />
+			everyone has the same name: {{sameName}} <br />
 			<ol>
 				<li ng-repeat="m in chat.msgs">
 					<b>{{m.name}}</b>: {{m.msg}}

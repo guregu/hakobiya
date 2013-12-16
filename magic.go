@@ -24,7 +24,11 @@ func RegisterMagic(sig magic, f spell) {
 func makeMagic(ch *channel, src string, sig magic, params map[string]interface{}) func() interface{} {
 	f, ok := Grimoire[sig]
 	if !ok {
-		panic("unknown magic signature for: " + sig.String())
+		// is there a generic function?
+		f, ok = Grimoire[magic{sig.type_.any(), sig.name}]
+		if !ok {
+			panic("unknown magic signature for: " + sig.String())
+		}
 	}
 	return f(ch, src, params)
 }
@@ -82,6 +86,7 @@ func _bool_sum(ch *channel, src string, params map[string]interface{}) func() in
 	}
 }
 
+// returns the sum
 func _int_sum(ch *channel, src string, params map[string]interface{}) func() interface{} {
 	return func() interface{} {
 		values, _ := ch.values(src)
@@ -94,6 +99,34 @@ func _int_sum(ch *channel, src string, params map[string]interface{}) func() int
 	}
 }
 
+// returns true if all values are the same
+func _any_same(ch *channel, src string, params map[string]interface{}) func() interface{} {
+	return func() interface{} {
+		values, _ := ch.values(src)
+
+		ct := len(values)
+		if ct == 0 {
+			// special case: no people
+			return false
+		}
+
+		var first interface{}
+		n := 0
+		for _, v := range values {
+			if n == 0 {
+				first = v
+			} else {
+				if v != first {
+					return false
+				}
+			}
+			n++
+		}
+
+		return true
+	}
+}
+
 func init() {
 	// boolean magic
 	RegisterMagic(magic{jsBool, "any"}, _bool_any)
@@ -101,4 +134,6 @@ func init() {
 	RegisterMagic(magic{jsBool, "sum"}, _bool_sum)
 	// integer magic
 	RegisterMagic(magic{jsInt, "sum"}, _int_sum)
+	// any type magic
+	RegisterMagic(magic{jsAnything, "same"}, _any_same)
 }
