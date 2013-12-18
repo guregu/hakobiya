@@ -28,6 +28,10 @@ expose = ["$listeners"]
 		src = "%name"
 		func = "any"
 		param = "Bob"
+	[channel.magic.guest_pct]
+		src = "%name"
+		func = "percent"
+		param = "Guest"
 	[channel.wire.chat]
 		[channel.wire.chat.input]
 			type = "string"
@@ -62,7 +66,7 @@ expose = ["$listeners"] #Q.$listeners
 		# Q.&typers - how many users are typing
 		[channel.magic.typers]
 			src = "%typing"
-			func = "sum"
+			func = "count"
 		[channel.magic.is_someone_typing]
 			src = "%typing"
 			func = "any"

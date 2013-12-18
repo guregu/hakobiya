@@ -18,13 +18,15 @@
 				$scope.chat = undefined;
 				$scope.users = 0;
 				$scope.sameName = false;
+				$scope.guestPct = 0;
 
 				Hakobiya.bind($scope, "channel",
 				{
 					"name": "%name",
 					"chat": "=chat",
 					"users": "$listeners",
-					"sameName": "&same_name"
+					"sameName": "&same_name",
+					"guestPct": "&guest_pct"
 				});
 			}
 
@@ -51,6 +53,7 @@
 		<div ng-controller="ChatCtrl">
 			{{users}} users <br />
 			everyone has the same name: {{sameName}} <br />
+			% of people named 'Guest': {{guestPct * 100}}% <br />
 			<ol>
 				<li ng-repeat="m in chat.msgs">
 					<b>{{m.name}}</b>: {{m.msg}}

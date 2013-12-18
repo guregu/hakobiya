@@ -33,21 +33,6 @@ func makeMagic(ch *channel, src string, sig spell, params map[string]interface{}
 	return f(ch, src, params)
 }
 
-// returns a count of the number of source values that are true
-func _bool_sum(ch *channel, src string, params map[string]interface{}) func() interface{} {
-	return func() interface{} {
-		values, _ := ch.values(src)
-
-		ct := 0
-		for _, val := range values {
-			if val.(bool) {
-				ct++
-			}
-		}
-		return ct
-	}
-}
-
 // returns the sum
 func _int_sum(ch *channel, src string, params map[string]interface{}) func() interface{} {
 	return func() interface{} {
@@ -94,7 +79,6 @@ func _any_same(ch *channel, src string, params map[string]interface{}) func() in
 func _any_all(ch *channel, src string, params map[string]interface{}) func() interface{} {
 	cmp, ok := params["value"]
 	if ok {
-		// we have a comparison value
 		return func() interface{} {
 			values, _ := ch.values(src)
 
@@ -136,7 +120,6 @@ func _any_all(ch *channel, src string, params map[string]interface{}) func() int
 func _any_any(ch *channel, src string, params map[string]interface{}) func() interface{} {
 	cmp, ok := params["value"]
 	if ok {
-		// we have a comparison value
 		return func() interface{} {
 			values, _ := ch.values(src)
 
@@ -174,13 +157,59 @@ func _any_any(ch *channel, src string, params map[string]interface{}) func() int
 	}
 }
 
+// counts the number of sourve values that equal the 'value' parameter
+// if no 'value' param is given, counts the number of non-zero values
+func _any_count(ch *channel, src string, params map[string]interface{}) func() interface{} {
+	cmp, ok := params["value"]
+	if ok {
+		return func() interface{} {
+			values, _ := ch.values(src)
+			ct := 0
+			for _, v := range values {
+				if v == cmp {
+					ct++
+				}
+			}
+			return ct
+		}
+	}
+
+	// no comaprison value, so count the non-zero values
+	_, name, _ := ch.lookup(src)
+	srcType := ch.types[name]
+	return func() interface{} {
+		values, _ := ch.values(src)
+		ct := 0
+		for _, v := range values {
+			if v != srcType.zero() {
+				ct++
+			}
+		}
+		return ct
+	}
+}
+
+func _any_percent(ch *channel, src string, params map[string]interface{}) func() interface{} {
+	countFunc := _any_count(ch, src, params)
+	return func() interface{} {
+		listeners := len(ch.listeners)
+
+		if listeners == 0 {
+			return 0.0
+		}
+
+		ct := float64(countFunc().(int))
+		return ct / float64(listeners)
+	}
+}
+
 func init() {
-	// boolean magic
-	RegisterMagic(spell{jsBool, "sum"}, _bool_sum)
 	// integer magic
 	RegisterMagic(spell{jsInt, "sum"}, _int_sum)
 	// any type magic
 	RegisterMagic(spell{jsAnything, "same"}, _any_same)
 	RegisterMagic(spell{jsAnything, "any"}, _any_any)
 	RegisterMagic(spell{jsAnything, "all"}, _any_all)
+	RegisterMagic(spell{jsAnything, "count"}, _any_count)
+	RegisterMagic(spell{jsAnything, "percent"}, _any_percent)
 }

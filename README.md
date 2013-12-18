@@ -111,7 +111,7 @@ Defines a magic variable called `&typers` that counts the number of users who ha
 ```toml
 [channel.magic.typers]
 	src  = "%typing"
-	func = "sum"
+	func = "count"
 ```
 
 
