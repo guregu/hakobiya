@@ -26,7 +26,7 @@ expose = ["$listeners"]
 		func = "same"
 	[channel.magic.has_bob]
 		src = "%name"
-		func = "any equal"
+		func = "any"
 		param = "Bob"
 	[channel.wire.chat]
 		[channel.wire.chat.input]

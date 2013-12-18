@@ -2,73 +2,35 @@ package main
 
 // magic function generator
 // func(*channel, src var name, params)
-type spell func(*channel, string, map[string]interface{}) func() interface{}
+type magicMaker func(*channel, string, map[string]interface{}) func() interface{}
 
 // magic signature
-type magic struct {
+type spell struct {
 	type_ jsType
 	name  string
 }
 
-func (sig magic) String() string {
+func (sig spell) String() string {
 	return string(sig.type_) + ":" + sig.name
 }
 
 // all known magic function generators live here
-var Grimoire = make(map[magic]spell)
+var Grimoire = make(map[spell]magicMaker)
 
-func RegisterMagic(sig magic, f spell) {
+func RegisterMagic(sig spell, f magicMaker) {
 	Grimoire[sig] = f
 }
 
-func makeMagic(ch *channel, src string, sig magic, params map[string]interface{}) func() interface{} {
+func makeMagic(ch *channel, src string, sig spell, params map[string]interface{}) func() interface{} {
 	f, ok := Grimoire[sig]
 	if !ok {
 		// is there a generic function?
-		f, ok = Grimoire[magic{sig.type_.any(), sig.name}]
+		f, ok = Grimoire[spell{sig.type_.any(), sig.name}]
 		if !ok {
 			panic("unknown magic signature for: " + sig.String())
 		}
 	}
 	return f(ch, src, params)
-}
-
-// returns true if any source value is true
-func _bool_any(ch *channel, src string, params map[string]interface{}) func() interface{} {
-	return func() interface{} {
-		values, _ := ch.values(src)
-
-		// special case: no one is here
-		if len(values) == 0 {
-			return false
-		}
-
-		for _, val := range values {
-			if val.(bool) {
-				return true
-			}
-		}
-		return false
-	}
-}
-
-// returns true if all source values are true
-func _bool_all(ch *channel, src string, params map[string]interface{}) func() interface{} {
-	return func() interface{} {
-		values, _ := ch.values(src)
-
-		// special case: no one is here
-		if len(values) == 0 {
-			return false
-		}
-
-		for _, val := range values {
-			if !val.(bool) {
-				return false
-			}
-		}
-		return true
-	}
 }
 
 // returns a count of the number of source values that are true
@@ -127,11 +89,31 @@ func _any_same(ch *channel, src string, params map[string]interface{}) func() in
 	}
 }
 
-func _any_all_equal(ch *channel, src string, params map[string]interface{}) func() interface{} {
+// returns true if all source values equal the 'value' parameter
+// if no 'value' param is given, checks if all values are non-zero
+func _any_all(ch *channel, src string, params map[string]interface{}) func() interface{} {
 	cmp, ok := params["value"]
-	if !ok {
-		panic("magic [any].all equal (using " + src + ") - missing 'value' parameter!")
+	if ok {
+		// we have a comparison value
+		return func() interface{} {
+			values, _ := ch.values(src)
+
+			if len(values) == 0 {
+				return false
+			}
+
+			for _, v := range values {
+				if v != cmp {
+					return false
+				}
+			}
+			return true
+		}
 	}
+
+	// no comaprison value, so see if every value is non-zero
+	_, name, _ := ch.lookup(src)
+	srcType := ch.types[name]
 	return func() interface{} {
 		values, _ := ch.values(src)
 
@@ -139,20 +121,42 @@ func _any_all_equal(ch *channel, src string, params map[string]interface{}) func
 			return false
 		}
 
-		for _, v := range values {
-			if v != cmp {
+		for _, val := range values {
+			if val == srcType.zero() {
 				return false
 			}
 		}
+
 		return true
 	}
 }
 
-func _any_any_equal(ch *channel, src string, params map[string]interface{}) func() interface{} {
+// returns true if any of the source values equal the 'value' parameter
+// if no 'value' param is given, checks if there are any non-zero values
+func _any_any(ch *channel, src string, params map[string]interface{}) func() interface{} {
 	cmp, ok := params["value"]
-	if !ok {
-		panic("magic [any].any equal (using " + src + ") - missing 'value' parameter!")
+	if ok {
+		// we have a comparison value
+		return func() interface{} {
+			values, _ := ch.values(src)
+
+			if len(values) == 0 {
+				return false
+			}
+
+			for _, v := range values {
+				if v == cmp {
+					return true
+				}
+			}
+
+			return false
+		}
 	}
+
+	// no comaprison value, so see if there's any non-zero values
+	_, name, _ := ch.lookup(src)
+	srcType := ch.types[name]
 	return func() interface{} {
 		values, _ := ch.values(src)
 
@@ -161,7 +165,7 @@ func _any_any_equal(ch *channel, src string, params map[string]interface{}) func
 		}
 
 		for _, v := range values {
-			if v == cmp {
+			if v != srcType.zero() {
 				return true
 			}
 		}
@@ -172,13 +176,11 @@ func _any_any_equal(ch *channel, src string, params map[string]interface{}) func
 
 func init() {
 	// boolean magic
-	RegisterMagic(magic{jsBool, "any"}, _bool_any)
-	RegisterMagic(magic{jsBool, "all"}, _bool_all)
-	RegisterMagic(magic{jsBool, "sum"}, _bool_sum)
+	RegisterMagic(spell{jsBool, "sum"}, _bool_sum)
 	// integer magic
-	RegisterMagic(magic{jsInt, "sum"}, _int_sum)
+	RegisterMagic(spell{jsInt, "sum"}, _int_sum)
 	// any type magic
-	RegisterMagic(magic{jsAnything, "same"}, _any_same)
-	RegisterMagic(magic{jsAnything, "all equal"}, _any_all_equal)
-	RegisterMagic(magic{jsAnything, "any equal"}, _any_any_equal)
+	RegisterMagic(spell{jsAnything, "same"}, _any_same)
+	RegisterMagic(spell{jsAnything, "any"}, _any_any)
+	RegisterMagic(spell{jsAnything, "all"}, _any_all)
 }

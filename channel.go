@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"log"
 	"sync"
 )
@@ -11,18 +10,20 @@ var channelTableMutex = &sync.RWMutex{}
 
 var channelConfigs = make(map[uint8]channelConfig)
 
-type varType int
+type varKind int
 
 const (
-	ChannelVar varType = iota
+	ChannelVar varKind = iota
 	UserVar
 	MagicVar
 	SystemVar
 	BroadcastVar
 	WireVar
+
+	InvalidVar varKind = -1
 )
 
-var sigilTable = map[uint8]varType{
+var sigilTable = map[uint8]varKind{
 	'%': UserVar,
 	'&': MagicVar,
 	'$': SystemVar,
@@ -42,12 +43,23 @@ type wire struct {
 	transform  func(*channel, wire, *client, interface{}) interface{}
 }
 
+type getter struct {
+	From *client
+	Var  string
+}
+
+type setter struct {
+	From  *client
+	Var   string
+	Value interface{}
+}
+
 type channel struct {
 	prefix     string
 	name       string
 	restrict   []string
 	listeners  map[*client]bool
-	index      map[string]varType
+	index      map[string]varKind
 	types      map[string]jsType
 	broadcasts map[string]broadcast
 	wires      map[string]wire
@@ -72,7 +84,7 @@ func newChannel(name string) *channel {
 	ch := &channel{
 		name:       name,
 		listeners:  make(map[*client]bool),
-		index:      make(map[string]varType),
+		index:      make(map[string]varKind),
 		types:      make(map[string]jsType),
 		broadcasts: make(map[string]broadcast),
 		wires:      make(map[string]wire),
@@ -100,7 +112,7 @@ func (ch *channel) wall(msg interface{}) {
 
 // notify when vars change (needs sigil in the name)
 func (ch *channel) notify(fullName string, value interface{}) {
-	ch.wall(&setRequest{
+	ch.wall(setRequest{
 		Cmd:     "s",
 		Channel: ch.name,
 		Var:     fullName,
@@ -122,47 +134,59 @@ func (ch *channel) invalidate(varName string) {
 	}
 }
 
-// gets value of a var (needs sigil)
-func (ch *channel) value(fullName string, from *client) (val interface{}, e error) {
-	// TODO: proper unicode handling
-	prefix, varName := fullName[0], fullName[1:] // TODO: bounds check
-	varType, exists := ch.index[varName]
-	if !exists {
-		log.Printf("[%s] unknown var: %s", ch.name, varName)
-		e = errors.New("unknown var: " + fullName)
-	} else if !checkPrefix(prefix, varType) {
-		log.Printf("[%s] mismatched sigil: %s for %v", ch.name, fullName, varType)
-		e = errors.New("mismatched sigil")
+// returns the kind information and sigil-less name of a variable, or an error
+func (ch *channel) lookup(fullName string) (kind varKind, name string, err *errorMessage) {
+	// the shortest variable is 2 characters
+	if len(fullName) < 2 {
+		return InvalidVar, "", channelError(ch, fullName, "Variable name too short.")
 	}
 
-	switch varType {
+	var sigil uint8
+	var exists bool
+
+	sigil, name = fullName[0], fullName[1:]
+	kind, exists = ch.index[name]
+
+	if !exists {
+		log.Printf("[%s] unknown var: %s", ch.name, name)
+		err = channelError(ch, fullName, "No such variable")
+	} else {
+		if sigilTable[sigil] != kind {
+			log.Printf("[%s] mismatched sigil: %s for %v", ch.name, fullName, kind)
+			err = channelError(ch, fullName, "Mismatched sigil")
+		}
+	}
+
+	return
+}
+
+// gets value of a var (needs sigil)
+func (ch *channel) value(fullName string, from *client) (val interface{}, err *errorMessage) {
+	var kind varKind
+	var name string
+	kind, name, err = ch.lookup(fullName)
+
+	switch kind {
 	case UserVar:
-		val = ch.uservars[varName][from]
+		val = ch.uservars[name][from]
 	case MagicVar:
-		val = ch.cache[varName]
+		val = ch.cache[name]
 	case SystemVar:
-		val = ch.vars["$"+varName]
+		val = ch.vars["$"+name]
 	}
 
 	return
 }
 
 // gets all values from a collection (uservars)
-func (ch *channel) values(fullName string) (val map[*client]interface{}, e error) {
-	// TODO: abstract this out
-	prefix, varName := fullName[0], fullName[1:] // TODO: bounds check
-	varType, exists := ch.index[varName]
-	if !exists {
-		log.Printf("[%s] unknown var: %s", ch.name, varName)
-		e = errors.New("unknown var: " + fullName)
-	} else if !checkPrefix(prefix, varType) {
-		log.Printf("[%s] mismatched sigil: %s for %v", ch.name, fullName, varType)
-		e = errors.New("mismatched sigil")
-	}
+func (ch *channel) values(fullName string) (val map[*client]interface{}, err *errorMessage) {
+	var kind varKind
+	var name string
+	kind, name, err = ch.lookup(fullName)
 
-	switch varType {
+	switch kind {
 	case UserVar:
-		val = ch.uservars[varName]
+		val = ch.uservars[name]
 	}
 
 	return
@@ -178,10 +202,10 @@ func (ch *channel) run() {
 			ch.listeners[c] = true
 
 			// new guy joined so we gotta set up his vars
-			for varName, values := range ch.uservars {
+			for name, values := range ch.uservars {
 				// TODO: some kind of default value setting, not just zero?
-				values[c] = ch.types[varName].zero()
-				ch.invalidate(varName)
+				values[c] = ch.types[name].zero()
+				ch.invalidate(name)
 			}
 
 			// $listeners
@@ -194,10 +218,10 @@ func (ch *channel) run() {
 			delete(ch.listeners, c)
 
 			// goodbye, var cleanup
-			for varName, values := range ch.uservars {
+			for name, values := range ch.uservars {
 				if _, exists := values[c]; exists {
 					delete(values, c)
-					ch.invalidate(varName)
+					ch.invalidate(name)
 				}
 			}
 
@@ -216,9 +240,11 @@ func (ch *channel) run() {
 		case getr := <-ch.get:
 			val, err := ch.value(getr.Var, getr.From)
 			if err != nil {
-				getr.From.send(Error("g", err.Error()))
+				err.ReplyTo = "g"
+				getr.From.send(err)
 				continue
 			}
+
 			msg := &setRequest{
 				Cmd:     "s",
 				Channel: ch.name,
@@ -227,34 +253,34 @@ func (ch *channel) run() {
 			}
 			getr.From.send(msg)
 		case setr := <-ch.set:
-			// TODO: abstract prefix checking etc out
-			prefix, varName := setr.Var[0], setr.Var[1:]
-			varType, exists := ch.index[varName]
-			if !exists {
-				setr.From.send(Error("g", "no such var "+setr.Var))
-				continue
+			kind, name, err := ch.lookup(setr.Var)
+			if err != nil {
+				if setr.From != nil {
+					err.ReplyTo = "s"
+					setr.From.send(err)
+				}
 			}
-			if !checkPrefix(prefix, varType) {
-				log.Printf("Mismatched sigil: %s for %v", setr.Var, varType)
-			}
-
-			switch varType {
+			switch kind {
 			case UserVar:
 				// did we get good data?
-				type_ := ch.types[varName]
+				type_ := ch.types[name]
 				if type_.is(setr.Value) {
-					ch.uservars[varName][setr.From] = setr.Value
-					ch.invalidate(varName)
+					ch.uservars[name][setr.From] = setr.Value
+					ch.invalidate(name)
 				} else {
-					setr.From.send(Error("s", "invalid type for "+setr.Var))
+					err := channelError(ch, setr.Var, "Invalid data: wrong type")
+					err.ReplyTo = "s"
+					setr.From.send(err)
 				}
 			case ChannelVar:
 				// TODO
 			case BroadcastVar:
-				b := ch.broadcasts[varName]
+				b := ch.broadcasts[name]
 				if setr.From != nil {
-					// TODO: should this be set by ReadOnly?
-					setr.From.send(Error("s", "broadcast is read only: "+setr.Var))
+					// TODO: possibly let clients send to broadcasts too?
+					err := channelError(ch, setr.Var, "You can't send to this")
+					err.ReplyTo = "s"
+					setr.From.send(err)
 				} else {
 					if b.Type.is(setr.Value) {
 						ch.notify(setr.Var, setr.Value)
@@ -263,26 +289,15 @@ func (ch *channel) run() {
 					}
 				}
 			case WireVar:
-				w := ch.wires[varName]
-				send := setr.Value
+				w := ch.wires[name]
+				msg := setr.Value
 				if w.rewrite {
-					send = w.transform(ch, w, setr.From, setr.Value)
+					msg = w.transform(ch, w, setr.From, setr.Value)
 				}
-				ch.notify(setr.Var, send)
+				ch.notify(setr.Var, msg)
 			}
 		}
 	}
-}
-
-type getter struct {
-	From *client
-	Var  string
-}
-
-type setter struct {
-	From  *client
-	Var   string
-	Value interface{}
 }
 
 func registerChannel(ch *channel) {
@@ -329,6 +344,14 @@ func getChannel(name string) *channel {
 	return ch
 }
 
-func checkPrefix(p uint8, vt varType) bool {
-	return sigilTable[p] == vt
+func channelError(ch *channel, varName, msg string) *errorMessage {
+	return &errorMessage{
+		Message: msg,
+		Channel: ch.name,
+		Var:     varName,
+	}
+}
+
+func checkSigil(sigil uint8, kind varKind) bool {
+	return sigilTable[sigil] == kind
 }

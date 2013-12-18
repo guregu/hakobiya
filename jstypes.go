@@ -15,6 +15,7 @@ const (
 	jsObjectArray   jsType = "object[]"
 	jsAnything      jsType = "any"
 	jsAnythingArray jsType = "any[]"
+	jsNone          jsType = ""
 )
 
 func (me jsType) valid() bool {

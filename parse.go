@@ -66,7 +66,7 @@ func (cfg channelConfig) apply(ch *channel) {
 	for varName, m := range cfg.Magic {
 		ch.index[varName] = MagicVar
 		prefix, srcVar := m.Src[:1][0], m.Src[1:]
-		if !checkPrefix(prefix, UserVar) {
+		if !checkSigil(prefix, UserVar) {
 			panic("magic var " + varName + " has invalid source var " + m.Src + ", expected a uservar (did you forget the %prefix?)")
 		}
 		v := cfg.Vars[srcVar]
@@ -81,7 +81,7 @@ func (cfg channelConfig) apply(ch *channel) {
 			}
 			m.Params["value"] = m.Param
 		}
-		ch.magic[varName] = makeMagic(ch, m.Src, magic{v.Type, m.Func}, m.Params)
+		ch.magic[varName] = makeMagic(ch, m.Src, spell{v.Type, m.Func}, m.Params)
 		ch.deps[srcVar] = append(ch.deps[srcVar], varName)
 		// とりあえず run it once
 		ch.cache[varName] = ch.magic[varName]()

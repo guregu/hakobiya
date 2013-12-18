@@ -34,3 +34,7 @@ type errorMessage struct {
 	Var     string `json:"n,omitempty"`
 	Message string `json:"m,omitempty"`
 }
+
+func (e errorMessage) Error() string {
+	return e.Message
+}
