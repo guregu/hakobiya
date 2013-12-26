@@ -25,11 +25,11 @@ Variable definitions often require a **type**, which can be any of the following
 
 General server configuration.
 
-| Name | Type | Required? | Default | Description |
-| ---- | ---- | --------- | ------- | ----------- |
-| name | string | **required** |  |  Server name. |
-| bind | string | *optional* | `":8080"` | Bind address: `[host]:port` |
-| path | string | *optional* | `"/hakobiya"` | Path for Websocket server 
+| Name | Type   | Required?    | Default       | Description                 |
+| ---- | ------ | ------------ | ------------- | --------------------------- |
+| name | string | **required** |               | Server name                 |
+| bind | string | *optional*   | `":8080"`     | Bind address: `[host]:port` |
+| path | string | *optional*   | `"/hakobiya"` | Path for Websocket server   |
 
 #### Example
 Sets up a server called Chat Helper at `ws://0.0.0.0/chat`. 
@@ -45,11 +45,11 @@ path = "/chat"
 
 The API lets you send broadcasts.
 
-| Name | Type | Required? | Default | Description |
-| ---- | ---- | --------- | ------- | ----------- |
-| enabled | bool | *optional* | `false` |  Enable the API? |
-| path | string | *optional* | `"/api"` | API root path
-| key | string | *optional* | | Secret key to prevent unauthorized access
+| Name    | Type   | Required?  | Default  | Description                 |
+| ------- | ------ | ---------- | -------- | --------------------------- |
+| enabled | bool   | *optional* | `false`  | Enable the API?             |
+| path    | string | *optional* | `"/api"` | API root path               |
+| key     | string | *optional* |          | Secret key                  |
 
 #### Example
 Enables the API at the default path with a secret key of `"turtles"`.
@@ -64,10 +64,10 @@ key = "turtles"
 
 Defines channels (note the double brackets). Channels are distinguished by their first letter (the `prefix` value) and are created on-the-fly when joined by a client. Any string after the prefix is OK for a channel name.
 
-| Name | Type | Required? | Default | Description |
-| ---- | ---- | --------- | ------- | ----------- |
-| prefix | char | **required** | | Distinguishing prefix |
-| expose | string[] | *optional* | [] | System variables to expose
+| Name   | Type     | Required?    | Default  | Description                 |
+| ------ | -------- | ------------ | -------- | --------------------------- |
+| prefix | char     | **required** |          | Distinguishing prefix       |
+| expose | string[] | *optional*   | `[]`     | System variables to expose  |
 
 #### Example
 Defines a channel with a prefix of `"c"` that exposes the system variable ``$listeners`` to clients. Any channel with a name starting with "c" will be handled by this: `c123`, `cTest`, etc.
@@ -82,10 +82,10 @@ expose = ["$listeners"]
 
 Defines a per-user value. You can use these values when computing magic variables.
 
-| Name | Type | Required? | Default | Description |
-| ---- | ---- | --------- | ------- | ----------- |
-| type | type | **required** | | The type of this variable |
-| ~~default~~ | * | *optional* | | Default value for this type
+| Name        | Type | Required?  | Default | Description                  |
+| ----------- | ---- | ---------- | ------- | ---------------------------- |
+| type        | type | *optional* | `"any"` | The type of this variable    |
+| ~~default~~ | *    | *optional* |         | Default value for this type  |
 
 #### Example
 Defines a string user variable called `%username`, and a boolean variable called `%typing`.
@@ -101,10 +101,10 @@ Defines a string user variable called `%username`, and a boolean variable called
 
 Magic variables are computed values based on user variables.
 
-| Name | Type | Required? | Default | Description |
-| ---- | ---- | --------- | ------- | ----------- |
-| src  | string | **required** | | Source variable to base calculations on |
-| func | string | **required** | | Name of the function to reduce the values, see the Magic docs |
+| Name | Type   | Required?    | Default | Description                                                   |
+| ---- | ------ | ------------ | ------- | ------------------------------------------------------------- |
+| src  | string | **required** |         | Source variable to base calculations on                       |
+| func | string | **required** |         | Name of the function to reduce the values, see the Magic docs |
 
 #### Example
 Defines a magic variable called `&typers` that counts the number of users who have `%typing` set to `true`.
@@ -120,9 +120,9 @@ Defines a magic variable called `&typers` that counts the number of users who ha
 
 Broadcasts allow the server (via the HTTP API) to send messages to all clients in a particular channel. 
 
-| Name | Type | Required? | Default | Description |
-| ---- | ---- | --------- | ------- | ----------- |
-| type | type | **required** | | The type of this variable |
+| Name | Type | Required?  | Default | Description                             |
+| ---- | ---- | ---------- | ------- | --------------------------------------- |
+| type | type | *optional* | `"any"` | Type of var for the broadcast to expect |
 
 #### Example
 ```toml
@@ -140,16 +140,16 @@ A wire's input and output is defined separately. The input definition is **requi
 #### Wire input (**required**)
 `[channel.wire.(variable name).input]`
 
-| Name | Type | Required? | Default | Description |
-| ---- | ---- | --------- | ------- | ----------- |
-| type | type | **required** | | The type of the input |
+| Name | Type | Required?    | Default | Description           |
+| ---- | ---- | ------------ | ------- | --------------------- |
+| type | type | *optional*   | `"any"` | The type of the input |
 
 #### Wire output (*optional*)
 `[channel.wire.(variable name).output]`
 
-| Name | Type | Required? | Default | Description |
-| ---- | ---- | --------- | ------- | ----------- |
-| type | type | **required** | | Output type, `"object"` when using rewrite rules |
+| Name | Type | Required?    | Default               | Description                                      |
+| ---- | ---- | ------------ | --------------------- | ------------------------------------------------ |
+| type | type | *optional*   | `"any"` or `"object"` | Output type, `"object"` when using rewrite rules |
 
 #### Wire output rewrite rules (*optional*)
 `[channel.wire.(variable name).output.rewrite]`
