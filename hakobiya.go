@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -9,11 +10,19 @@ import (
 	"github.com/drone/routes"
 )
 
+var configFile = flag.String("config", "config.toml", "config file path")
 var serverConf serverConfig
 
 func main() {
+	flag.Parse()
+
 	// load config
-	conf := parseConfig("config.toml")
+	conf, ok := parseConfig(*configFile)
+	if !ok {
+		log.Println("Giving up.")
+		return
+	}
+
 	serverConf = conf.Server
 	for _, ccfg := range conf.Channels {
 		log.Printf("Channel: %s", ccfg.Prefix)

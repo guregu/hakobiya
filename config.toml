@@ -18,29 +18,29 @@ key = "abcdefg"
 [[channel]]
 prefix = "c"
 expose = ["$listeners"]
-	[channel.var.name]
+[channel.var.name]
+	type = "string"
+	default = "Guest-%d"
+[channel.magic.same_name]
+	src = "%name"
+	func = "same"
+[channel.magic.has_bob]
+	src = "%name"
+	func = "any"
+	[channel.magic.has_bob.params]
+		value = "Bob"
+[channel.magic.guest_pct]
+	src = "%name"
+	func = "percent"
+	param = "Guest"
+[channel.wire.chat]
+	[channel.wire.chat.input]
 		type = "string"
-		default = "Guest-%d"
-	[channel.magic.same_name]
-		src = "%name"
-		func = "same"
-	[channel.magic.has_bob]
-		src = "%name"
-		func = "any"
-		param = "Bob"
-	[channel.magic.guest_pct]
-		src = "%name"
-		func = "percent"
-		param = "Guest"
-	[channel.wire.chat]
-		[channel.wire.chat.input]
-			type = "string"
-		[channel.wire.chat.output]
-			type = "object"
-			[channel.wire.chat.output.rewrite]
-				name = "%name" #c.%name
-				msg = "$input"
-				test = "'literal"
+	[channel.wire.chat.output]
+		[channel.wire.chat.output.rewrite]
+			name = "%name" #c.%name
+			msg = "$input"
+			test = "'literal"
 
 
 
@@ -50,34 +50,22 @@ expose = ["$listeners"]
 [[channel]]
 prefix = "Q"
 expose = ["$listeners"] #Q.$listeners
-	# Broadcasts
-	[channel.broadcast]
-		# Q.#answer - new answer notifications
-		[channel.broadcast.answer]
-			type = "string"
-			readonly = true
-	# Variables
-	[channel.var]
-		# Q.%typing - am I typing?
-		[channel.var.typing]
-			type = "bool"
-	# Magic
-	[channel.magic]
-		# Q.&typers - how many users are typing
-		[channel.magic.typers]
-			src = "%typing"
-			func = "count"
-		[channel.magic.is_someone_typing]
-			src = "%typing"
-			func = "any"
-
-#######################
-# @: User notifcations  
-#######################
-[[channel]]
-prefix = "@"
-restrict = ["userid"]
-	# @.last_notify - last notification ID
-	[channel.var.last_notify]
-		type = "date"
-		readonly = true
+# Broadcasts
+[channel.broadcast]
+	# Q.#answer - new answer notifications
+	[channel.broadcast.answer]
+		type = "string"
+# Variables
+[channel.var]
+	# Q.%typing - am I typing?
+	[channel.var.typing]
+		type = "bool"
+# Magic
+[channel.magic]
+	# Q.&typers - how many users are typing
+	[channel.magic.typers]
+		src = "%typing"
+		func = "count"
+	[channel.magic.is_someone_typing]
+		src = "%typing"
+		func = "any"

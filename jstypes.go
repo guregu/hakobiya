@@ -126,3 +126,10 @@ func (me jsType) any() jsType {
 		panic(".any(): unknown jsType! " + me)
 	}
 }
+
+func (me jsType) rescue() jsType {
+	if me == jsNone {
+		return jsAnything
+	}
+	return me
+}

@@ -8,7 +8,10 @@ A Hakobiya server has one or more **channel** templates. Channels have names, an
 Hakobiya has an HTTP API that lets you send broadcasts to any channel, so you can have something else handle the logic and let Hakobiya take care of updating your users.
 
 # Configuration 
-The default config file is `config.toml` 
+The default config file is `config.toml`. You can specify a different file with the `-config` flag:
+```
+hakobiya -config /some/dir/hakobiya.toml
+```
 
 #### Types
 Variable definitions often require a **type**, which can be any of the following:
@@ -163,7 +166,6 @@ Defines a wire called `=chat` that takes a string as input and rewrites it as an
 	[channel.wire.chat.input]
 		type = "string"
 	[channel.wire.chat.output]
-		type = "object"
 		[channel.wire.chat.output.rewrite]
 			sender = "%username" 
 			msg = "$input"

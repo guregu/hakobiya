@@ -1,5 +1,7 @@
 package main
 
+import "log"
+
 // magic function generator
 // func(*channel, src var name, params)
 type magicMaker func(*channel, string, map[string]interface{}) func() interface{}
@@ -160,6 +162,7 @@ func _any_any(ch *channel, src string, params map[string]interface{}) func() int
 // counts the number of sourve values that equal the 'value' parameter
 // if no 'value' param is given, counts the number of non-zero values
 func _any_count(ch *channel, src string, params map[string]interface{}) func() interface{} {
+	log.Printf("fff %#v", params)
 	cmp, ok := params["value"]
 	if ok {
 		return func() interface{} {

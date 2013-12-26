@@ -1,6 +1,7 @@
 package main
 
 import "github.com/BurntSushi/toml"
+import "fmt"
 
 type config struct {
 	Server   serverConfig
@@ -14,14 +15,20 @@ type serverConfig struct {
 	Path string
 }
 
+var defaultServerConfig = serverConfig{
+	Name: "Hakobiya",
+	Bind: ":8080",
+	Path: "/hakobiya",
+}
+
 type channelConfig struct {
 	Prefix    string
 	Expose    []string // special $vars to expose
 	Restrict  []string
-	Vars      map[string]varDef `toml:"var"`
-	Magic     map[string]magicDef
-	Broadcast map[string]broadcast
-	Wire      map[string]wireDef
+	Vars      map[string]*varDef `toml:"var"`
+	Magic     map[string]*magicDef
+	Broadcast map[string]*broadcast
+	Wire      map[string]*wireDef
 }
 
 type apiConfig struct {
@@ -30,7 +37,175 @@ type apiConfig struct {
 	Key     string
 }
 
-// TODO: move validation elsewhere (only do it once)
+var defaultAPIConfig = apiConfig{
+	Path: "/api",
+}
+
+func (cfg *config) prepare() {
+	// [server]
+	if cfg.Server.Name == "" {
+		cfg.Server.Name = defaultServerConfig.Name
+	}
+	if cfg.Server.Bind == "" {
+		cfg.Server.Bind = defaultServerConfig.Bind
+	}
+	if cfg.Server.Path == "" {
+		cfg.Server.Path = defaultServerConfig.Path
+	} else {
+		cfg.Server.Path = fixPath(cfg.Server.Path)
+	}
+
+	// [api]
+	if cfg.API.Path == "" {
+		cfg.API.Path = defaultAPIConfig.Path
+	} else {
+		cfg.API.Path = fixPath(cfg.API.Path)
+	}
+
+	// [[channel]]
+	for _, ch := range cfg.Channels {
+		// [channel.var.*]
+		for _, v := range ch.Vars {
+			// sets type to 'any' if none
+			v.Type = v.Type.rescue()
+		}
+		// [channel.broadcast.*]
+		for _, b := range ch.Broadcast {
+			b.Type = b.Type.rescue()
+		}
+		// [channel.wire.*]
+		for _, w := range ch.Wire {
+			w.Input.Type = w.Input.Type.rescue()
+			if w.Output.hasRewrite() {
+				// TODO: warn the user if they have it set to something other than 'object'?
+				w.Output.Type = jsObject
+			} else {
+				w.Output.Type = w.Output.Type.rescue()
+			}
+		}
+		// [channel.magic.*]
+		for name, m := range ch.Magic {
+			// you can use param as a shortcut for defining a params table to just set 'value'
+			if m.Param != nil {
+				if m.Params == nil {
+					m.Params = make(map[string]interface{})
+				} else {
+					if _, exists := m.Params["value"]; exists {
+						// TODO: ideally move this to check()
+						panic("magic " + name + " has both param and params['value'] set, only set one!")
+					}
+				}
+				m.Params["value"] = m.Param
+			}
+		}
+	}
+}
+
+func (cfg config) check() (ok bool, errors []string) {
+	channelMap := make(map[string]bool)
+
+	for _, ch := range cfg.Channels {
+		// channel basics
+		if ch.Prefix == "" {
+			errors = append(errors, "[[channel]] No 'prefix' set!")
+		} else {
+			if _, exists := channelMap[ch.Prefix]; exists {
+				errors = append(errors, "[[channel]] Duplicate definition for prefix: "+ch.Prefix)
+			} else {
+				channelMap[ch.Prefix] = true
+			}
+		}
+		// TODO: check ch.Expose
+		// broadcast check
+		for name, b := range ch.Broadcast {
+			if !b.Type.valid() {
+				errors = append(errors, fmt.Sprintf("(%s) [channel.broadcast.%s] Invalid type: %s", ch.Prefix, name, string(b.Type)))
+			}
+		}
+		// uservar check
+		for name, v := range ch.Vars {
+			if !v.Type.valid() {
+				errors = append(errors, fmt.Sprintf("(%s) [channel.var.%s] Invalid type: %s", ch.Prefix, name, string(v.Type)))
+			}
+		}
+		// magic check
+		for name, m := range ch.Magic {
+			if m.Src == "" {
+				errors = append(errors, fmt.Sprintf("(%s) [channel.magic.%s] Missing 'src' source variable definition!", ch.Prefix, name))
+			} else {
+				sigil, _, varOk := checkVarName(m.Src)
+				if !varOk {
+					errors = append(errors, fmt.Sprintf("(%s) [channel.magic.%s] Invalid source variable: %s",
+						ch.Prefix, name, m.Src))
+				}
+				if !checkSigil(sigil, UserVar) {
+					errors = append(errors, fmt.Sprintf("(%s) [channel.magic.%s] Invalid sigil for source variable: %s (expected %%...)",
+						ch.Prefix, name, m.Src))
+				}
+
+			}
+			if m.Func == "" {
+				errors = append(errors, fmt.Sprintf("(%s) [channel.magic.%s] Missing 'func' magic function definition!", ch.Prefix, name))
+			} else {
+				_, naked, _ := checkVarName(m.Src)
+				if srcVar, ok := ch.Vars[naked]; !ok {
+					errors = append(errors, fmt.Sprintf("(%s) [channel.magic.%s] Source variable %s is not defined, did you forget [channel.var.%s]?",
+						ch.Prefix, name, m.Src, naked))
+				} else {
+					if srcVar.Type.valid() {
+						spl := spell{srcVar.Type, m.Func}
+						if _, ok := Grimoire[spl]; !ok {
+							generic := spell{srcVar.Type.any(), m.Func}
+							if _, ok := Grimoire[generic]; !ok {
+								errors = append(errors, fmt.Sprintf("(%s) [channel.magic.%s] No such magic spell: %s", ch.Prefix, name, spl))
+							}
+						}
+					}
+				}
+			}
+		}
+		// wire check
+		for name, w := range ch.Wire {
+			if w.Input == nil {
+				errors = append(errors, fmt.Sprintf("(%s) [channel.wire.%s.input] Missing!", ch.Prefix, name))
+				continue
+			}
+
+			// TODO: in the future, type conversion etc
+			if !w.Input.Type.valid() {
+				errors = append(errors, fmt.Sprintf("(%s) [channel.wire.%s.input] Invalid type: %s", ch.Prefix, name, string(w.Input.Type)))
+			}
+
+			if w.Output != nil {
+				if !w.Output.Type.valid() {
+					errors = append(errors, fmt.Sprintf("(%s) [channel.wire.%s.output] Invalid type: %s", ch.Prefix, name, string(w.Output.Type)))
+				}
+				// rewrite check
+				if w.Output != nil && w.Output.hasRewrite() {
+					for n, v := range w.Output.Rewrite {
+						if len(v) == 0 {
+							errors = append(errors, fmt.Sprintf("(%s) [channel.wire.%s.output.rewrite] %s = blank!", ch.Prefix, name, n))
+						} else {
+							// if not a literal
+							if v[0] != '\'' {
+								_, _, ok := checkVarName(v)
+								if !ok {
+									errors = append(errors, fmt.Sprintf("(%s) [channel.wire.%s.output.rewrite] %s = %s, invalid var: %s",
+										ch.Prefix, name, n, v, v))
+								}
+								// TODO: check if the var is defined or not
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	ok = len(errors) == 0
+	return
+}
+
 func (cfg channelConfig) apply(ch *channel) {
 	// prefix
 	ch.prefix = cfg.Prefix
@@ -38,7 +213,7 @@ func (cfg channelConfig) apply(ch *channel) {
 	ch.restrict = cfg.Restrict
 	// broadcasts
 	for name, broadcastCfg := range cfg.Broadcast {
-		ch.broadcasts[name] = broadcastCfg
+		ch.broadcasts[name] = *broadcastCfg
 	}
 	// expose
 	for _, ex := range cfg.Expose {
@@ -58,29 +233,14 @@ func (cfg channelConfig) apply(ch *channel) {
 		ch.index[varName] = UserVar
 		ch.uservars[varName] = make(map[*client]interface{})
 		ch.types[varName] = v.Type
-		validateOrPanic(v.Type, ch.prefix, varName)
 		// TODO set read only
 	}
 	// TODO: channel vars?
 	// magic
 	for varName, m := range cfg.Magic {
 		ch.index[varName] = MagicVar
-		prefix, srcVar := m.Src[:1][0], m.Src[1:]
-		if !checkSigil(prefix, UserVar) {
-			panic("magic var " + varName + " has invalid source var " + m.Src + ", expected a uservar (did you forget the %prefix?)")
-		}
+		srcVar := m.Src[1:]
 		v := cfg.Vars[srcVar]
-		// you can use param as a shortcut for defining a params table to just set 'value'
-		if m.Param != nil {
-			if m.Params == nil {
-				m.Params = make(map[string]interface{})
-			} else {
-				if _, exists := m.Params["value"]; exists {
-					panic("magic " + varName + " has both param and params['value'] set, only set one!")
-				}
-			}
-			m.Params["value"] = m.Param
-		}
 		ch.magic[varName] = makeMagic(ch, m.Src, spell{v.Type, m.Func}, m.Params)
 		ch.deps[srcVar] = append(ch.deps[srcVar], varName)
 		// とりあえず run it once
@@ -95,13 +255,11 @@ func (cfg channelConfig) apply(ch *channel) {
 			panic("no input definition for wire: " + varName)
 		} else {
 			w.inputType = wireCfg.Input.Type
-			validateOrPanic(wireCfg.Input.Type, ch.prefix, varName)
 		}
 		if wireCfg.Output == nil {
 			w.outputType = w.inputType
 		} else {
 			w.outputType = wireCfg.Output.Type
-			validateOrPanic(wireCfg.Output.Type, ch.prefix, varName)
 			if wireCfg.Output.hasRewrite() {
 				w.rewrite = true
 				w.transform = func(ch *channel, _wire wire, from *client, input interface{}) interface{} {
@@ -166,17 +324,42 @@ func (rw rewriteDef) rewrite(ch *channel, from *client, input interface{}) map[s
 	return transformed
 }
 
-func parseConfig(file string) config {
-	var conf config
-	_, err := toml.DecodeFile(file, &conf)
+func parseConfig(file string) (cfg config, ok bool) {
+	_, err := toml.DecodeFile(file, &cfg)
 	if err != nil {
 		panic(err)
 	}
-	return conf
+	cfg.prepare()
+
+	var errors []string
+	ok, errors = cfg.check()
+	if !ok {
+		fmt.Printf("ERROR: %d error(s) in %s:\n", len(errors), file)
+		for n, e := range errors {
+			fmt.Printf("#%d: %s\n", n+1, e)
+		}
+	}
+
+	return cfg, ok
 }
 
-func validateOrPanic(t jsType, prefix, from string) {
-	if !t.valid() {
-		panic("[" + prefix + "] invalid type: '" + string(t) + "' for var " + from)
+func fixPath(path string) string {
+	if path[0] != '/' {
+		path = "/" + path
 	}
+	if path[len(path)-1] == '/' {
+		path = path[:len(path)-1]
+	}
+	return path
+}
+
+func checkVarName(v string) (sigil uint8, short string, ok bool) {
+	if len(v) < 2 {
+		return 0, "", false
+	}
+
+	sigil, short = v[0], v[1:]
+	ok = true
+
+	return
 }
