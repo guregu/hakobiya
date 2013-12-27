@@ -48,10 +48,11 @@ func (cfg channelTemplate) apply(ch *channel) {
 		ch.index[varName] = MagicVar
 		srcVar := m.Src[1:]
 		v := cfg.Vars[srcVar]
-		ch.magic[varName] = makeMagic(ch, m.Src, spell{v.Type, m.Func}, m.Params)
+		s := spell{v.Type, m.Func}
+		ch.magic[varName] = makeMagic(ch, m.Src, s, m.Params)
 		ch.deps[srcVar] = append(ch.deps[srcVar], varName)
-		// とりあえず run it once
-		ch.cache[varName] = ch.magic[varName]()
+		// set default value for magic cache
+		ch.cache[varName] = defaultValue(s)
 	}
 	// wires
 	// TODO: some kind of generic function chain thingy to make the logic here more sane

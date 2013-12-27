@@ -1,8 +1,7 @@
 package main
 
-// magic function generator
-// func(*channel, src var name, params)
-type magicMaker func(*channel, string, map[string]interface{}) func() interface{}
+// all known magic lives here
+var grimoire = make(map[spell]magicEntry)
 
 // magic signature
 type spell struct {
@@ -10,42 +9,53 @@ type spell struct {
 	name  string
 }
 
-// all known magic function generators live here
-var grimoire = make(map[spell]magicMaker)
+type magicEntry struct {
+	f          magicMaker
+	returnType jsType
+}
 
-func registerMagic(sig spell, f magicMaker) {
-	grimoire[sig] = f
+// magic function generator
+// func(*channel, src var name, params)
+type magicMaker func(*channel, string, map[string]interface{}) func() interface{}
+
+func registerMagic(sig spell, f magicMaker, returnType jsType) {
+	grimoire[sig] = magicEntry{f, returnType}
 }
 
 func hasMagic(sig spell) bool {
 	if _, ok := grimoire[sig]; ok {
 		return true
 	} else {
-		generic := spell{sig.type_.any(), sig.name}
-		if _, exists := grimoire[generic]; exists {
+		if _, ok = grimoire[sig.generic()]; ok {
 			return true
 		}
 	}
 	return false
 }
 
+func defaultValue(sig spell) interface{} {
+	if m, ok := grimoire[sig]; ok {
+		return m.returnType.zero()
+	}
+	return nil
+}
+
 func makeMagic(ch *channel, src string, sig spell, params map[string]interface{}) func() interface{} {
-	f, ok := grimoire[sig]
+	m, ok := grimoire[sig]
 	if !ok {
 		// is there a generic function?
-		f, ok = grimoire[spell{sig.type_.any(), sig.name}]
+		m, ok = grimoire[sig.generic()]
 		if !ok {
 			panic("unknown magic signature for: " + sig.String())
 		}
 	}
-	return f(ch, src, params)
+	return m.f(ch, src, params)
 }
 
 // returns the sum
 func _int_sum(ch *channel, src string, params map[string]interface{}) func() interface{} {
 	return func() interface{} {
 		values, _ := ch.values(src)
-
 		sum := 0
 		for _, val := range values {
 			sum += val.(int)
@@ -54,17 +64,57 @@ func _int_sum(ch *channel, src string, params map[string]interface{}) func() int
 	}
 }
 
+// returns the average (rounded to an int)
+func _int_avg(ch *channel, src string, params map[string]interface{}) func() interface{} {
+	sumFunc := _int_sum(ch, src, params)
+	return func() interface{} {
+		sum, ct := sumFunc().(int), len(ch.listeners)
+		return sum / ct
+	}
+}
+
+// returns the maximum value
+func _int_max(ch *channel, src string, params map[string]interface{}) func() interface{} {
+	return func() interface{} {
+		values, _ := ch.values(src)
+		var max *int
+		for _, val := range values {
+			n := val.(int)
+			if max == nil {
+				max = &n
+			} else {
+				if n > *max {
+					max = &n
+				}
+			}
+		}
+		return *max
+	}
+}
+
+// returns the minimum value
+func _int_min(ch *channel, src string, params map[string]interface{}) func() interface{} {
+	return func() interface{} {
+		values, _ := ch.values(src)
+		var min *int
+		for _, val := range values {
+			n := val.(int)
+			if min == nil {
+				min = &n
+			} else {
+				if n < *min {
+					min = &n
+				}
+			}
+		}
+		return *min
+	}
+}
+
 // returns true if all values are the same
 func _any_same(ch *channel, src string, params map[string]interface{}) func() interface{} {
 	return func() interface{} {
 		values, _ := ch.values(src)
-
-		ct := len(values)
-		if ct == 0 {
-			// special case: no people
-			return false
-		}
-
 		var first interface{}
 		n := 0
 		for _, v := range values {
@@ -89,11 +139,6 @@ func _any_all(ch *channel, src string, params map[string]interface{}) func() int
 	if ok {
 		return func() interface{} {
 			values, _ := ch.values(src)
-
-			if len(values) == 0 {
-				return false
-			}
-
 			for _, v := range values {
 				if v != cmp {
 					return false
@@ -108,17 +153,11 @@ func _any_all(ch *channel, src string, params map[string]interface{}) func() int
 	srcType := ch.types[name]
 	return func() interface{} {
 		values, _ := ch.values(src)
-
-		if len(values) == 0 {
-			return false
-		}
-
 		for _, val := range values {
 			if val == srcType.zero() {
 				return false
 			}
 		}
-
 		return true
 	}
 }
@@ -130,17 +169,11 @@ func _any_any(ch *channel, src string, params map[string]interface{}) func() int
 	if ok {
 		return func() interface{} {
 			values, _ := ch.values(src)
-
-			if len(values) == 0 {
-				return false
-			}
-
 			for _, v := range values {
 				if v == cmp {
 					return true
 				}
 			}
-
 			return false
 		}
 	}
@@ -150,17 +183,11 @@ func _any_any(ch *channel, src string, params map[string]interface{}) func() int
 	srcType := ch.types[name]
 	return func() interface{} {
 		values, _ := ch.values(src)
-
-		if len(values) == 0 {
-			return false
-		}
-
 		for _, v := range values {
 			if v != srcType.zero() {
 				return true
 			}
 		}
-
 		return false
 	}
 }
@@ -201,11 +228,6 @@ func _any_percent(ch *channel, src string, params map[string]interface{}) func()
 	countFunc := _any_count(ch, src, params)
 	return func() interface{} {
 		listeners := len(ch.listeners)
-
-		if listeners == 0 {
-			return 0.0
-		}
-
 		ct := float64(countFunc().(int))
 		return ct / float64(listeners)
 	}
@@ -213,15 +235,22 @@ func _any_percent(ch *channel, src string, params map[string]interface{}) func()
 
 func init() {
 	// integer magic
-	registerMagic(spell{jsInt, "sum"}, _int_sum)
+	registerMagic(spell{jsInt, "sum"}, _int_sum, jsInt)
+	registerMagic(spell{jsInt, "max"}, _int_max, jsInt)
+	registerMagic(spell{jsInt, "min"}, _int_min, jsInt)
+	registerMagic(spell{jsInt, "avg"}, _int_avg, jsInt)
 	// any type magic
-	registerMagic(spell{jsAnything, "same"}, _any_same)
-	registerMagic(spell{jsAnything, "any"}, _any_any)
-	registerMagic(spell{jsAnything, "all"}, _any_all)
-	registerMagic(spell{jsAnything, "count"}, _any_count)
-	registerMagic(spell{jsAnything, "percent"}, _any_percent)
+	registerMagic(spell{jsAnything, "same"}, _any_same, jsBool)
+	registerMagic(spell{jsAnything, "any"}, _any_any, jsBool)
+	registerMagic(spell{jsAnything, "all"}, _any_all, jsBool)
+	registerMagic(spell{jsAnything, "count"}, _any_count, jsInt)
+	registerMagic(spell{jsAnything, "percent"}, _any_percent, jsFloat)
 }
 
-func (sig spell) String() string {
-	return string(sig.type_) + ":" + sig.name
+func (s spell) generic() spell {
+	return spell{s.type_.any(), s.name}
+}
+
+func (s spell) String() string {
+	return string(s.type_) + ":" + s.name
 }
