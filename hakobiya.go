@@ -5,55 +5,73 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"path/filepath"
+	"unicode/utf8"
 
 	"code.google.com/p/go.net/websocket"
 	"github.com/drone/routes"
 )
 
 var configFile = flag.String("config", "config.toml", "config file path")
-var serverConf serverConfig
+var currentConfig config
+var templates = make(map[rune]channelTemplate)
 
 func main() {
 	flag.Parse()
 
 	// load config
-	conf, ok := parseConfig(*configFile)
+	cfg, ok := parseConfig(*configFile)
 	if !ok {
-		log.Println("Giving up.")
+		log.Println("Bad config file, giving up.")
 		return
 	}
-
-	serverConf = conf.Server
-	for _, ccfg := range conf.Channels {
-		log.Printf("Channel: %s", ccfg.Prefix)
-		channelConfigs[ccfg.Prefix[0]] = ccfg
+	currentConfig = cfg
+	channelBanner := ""
+	for _, tmpl := range cfg.Channels {
+		channelBanner += tmpl.Prefix
+		prefix, _ := utf8.DecodeRuneInString(tmpl.Prefix)
+		templates[prefix] = tmpl
 	}
+
 	// start http services
-	log.Printf("Starting Hakobiya %s @ %s%s \n", serverConf.Name, serverConf.Bind, serverConf.Path)
-	http.Handle(serverConf.Path, websocket.Handler(serveWS))
-	http.HandleFunc("/", index)
+	log.Printf("Starting Hakobiya %s @ %s%s", cfg.Server.Name, cfg.Server.Bind, cfg.Server.Path)
+	log.Printf("Channels (%d): %s", len(templates), channelBanner)
+	http.Handle(cfg.Server.Path, websocket.Handler(serveWS))
 	// api
-	if conf.API.Enabled {
-		apiKey = conf.API.Key
-		apiPath := conf.API.Path
-		if apiPath == "" {
-			// the default api path is /api/
-			apiPath = "/api"
-		}
+	if cfg.API.Enabled {
+		apiKey = cfg.API.Key
+		apiPath := cfg.API.Path
 		mux := routes.New()
 		mux.Post(apiPath+"/:channel/broadcast", apiBroadcast)
 		mux.Get(apiPath+"/:channel/debug", apiDebug)
 		mux.Filter(apiKeyFilter)
 		http.Handle(apiPath+"/", mux)
-		log.Printf("API open at %s/", apiPath)
+		log.Printf("API: enabled at %s/", apiPath)
+	} else {
+		log.Printf("API: off")
 	}
-	// for testing purposes
-	http.Handle("/js/", http.StripPrefix("/js/", http.FileServer(http.Dir("js"))))
-	http.ListenAndServe(serverConf.Bind, nil)
+	// static server
+	if cfg.Static.Enabled {
+		log.Printf("Static content server: enabled")
+		if cfg.Static.Index == "" {
+			http.HandleFunc("/", http.NotFound)
+		} else {
+			http.HandleFunc("/", index)
+			log.Printf("Serving: / → %s", cfg.Static.Index)
+		}
+
+		for _, dir := range cfg.Static.Dirs {
+			path := "/" + filepath.Base(dir) + "/"
+			http.Handle(path, http.StripPrefix(
+				path, http.FileServer(http.Dir(dir))))
+			log.Printf("Serving: %s → %s", path, dir)
+		}
+	}
+	http.ListenAndServe(cfg.Server.Bind, nil)
 }
 
-func index(w http.ResponseWriter, r *http.Request) {
-	f, err := ioutil.ReadFile("test.html")
+func index(file string) func(w http.ResponseWriter, r *http.Request) {
+	f, err := ioutil.ReadFile(currentConfig.Static.Index)
 	if err == nil {
 		w.Write(f)
 	}

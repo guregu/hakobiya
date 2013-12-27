@@ -6,6 +6,11 @@ name = "Test Server"
 bind = ":8080"
 path = "/ws"
 
+[static] # static file server
+enabled = true
+index = "test.html"
+dirs = ["js"]
+
 [api]
 enabled = true
 path = "/api"
@@ -16,7 +21,7 @@ key = "abcdefg"
 # C: Chat room
 #######################
 [[channel]]
-prefix = "c"
+prefix = "話"
 expose = ["$listeners"]
 [channel.var.name]
 	type = "string"

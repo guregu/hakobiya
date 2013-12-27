@@ -3,12 +3,11 @@ package main
 import (
 	"log"
 	"sync"
+	"unicode/utf8"
 )
 
 var channelTable = make(map[string]*channel)
 var channelTableMutex = &sync.RWMutex{}
-
-var channelConfigs = make(map[uint8]channelConfig)
 
 type varKind int
 
@@ -55,7 +54,7 @@ type setter struct {
 }
 
 type channel struct {
-	prefix     string
+	prefix     rune
 	name       string
 	restrict   []string
 	listeners  map[*client]bool
@@ -76,8 +75,8 @@ type channel struct {
 }
 
 func newChannel(name string) *channel {
-	prefix := name[0]
-	cfg, exists := channelConfigs[prefix]
+	prefix, _ := utf8.DecodeRuneInString(name)
+	cfg, exists := templates[prefix]
 	if !exists {
 		return nil
 	}
