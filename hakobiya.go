@@ -70,7 +70,7 @@ func main() {
 	http.ListenAndServe(cfg.Server.Bind, nil)
 }
 
-func index(file string) func(w http.ResponseWriter, r *http.Request) {
+func index(w http.ResponseWriter, r *http.Request) {
 	f, err := ioutil.ReadFile(currentConfig.Static.Index)
 	if err == nil {
 		w.Write(f)
