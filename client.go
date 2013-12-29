@@ -52,6 +52,7 @@ func (c *client) run() {
 		err = json.Unmarshal(data, &req)
 		if err != nil {
 			c.send(Error("?", "invalid cmd"))
+			continue
 		}
 
 		log.Printf("Got: %s\n-> %s\n", req.Cmd, string(data))
@@ -81,12 +82,25 @@ func (c *client) run() {
 			json.Unmarshal(data, &gr)
 			ch := getChannel(gr.Channel)
 			if ch != nil {
+				get := getter{
+					From: c,
+					Var:  gr.Var,
+				}
+				ch.get <- get
+			} else {
+				c.send(Error(gr.Cmd, "invalid channel"))
+			}
+		case "G": //multi-get
+			var gr multigetRequest
+			json.Unmarshal(data, &gr)
+			ch := getChannel(gr.Channel)
+			if ch != nil {
 				for _, v := range gr.Vars {
-					gttr := getter{
+					get := getter{
 						From: c,
 						Var:  v,
 					}
-					ch.get <- gttr
+					ch.get <- get
 				}
 			} else {
 				c.send(Error(gr.Cmd, "invalid channel"))
@@ -96,12 +110,28 @@ func (c *client) run() {
 			json.Unmarshal(data, &sr)
 			ch := getChannel(sr.Channel)
 			if ch != nil {
-				sttr := setter{
+				set := setter{
 					From:  c,
 					Var:   sr.Var,
 					Value: sr.Value,
 				}
-				ch.set <- sttr
+				ch.set <- set
+			} else {
+				c.send(Error(sr.Cmd, "invalid channel"))
+			}
+		case "S": //multi-set
+			var sr multisetRequest
+			json.Unmarshal(data, &sr)
+			ch := getChannel(sr.Channel)
+			if ch != nil {
+				for n, v := range sr.Values {
+					set := setter{
+						From:  c,
+						Var:   n,
+						Value: v,
+					}
+					ch.set <- set
+				}
 			} else {
 				c.send(Error(sr.Cmd, "invalid channel"))
 			}

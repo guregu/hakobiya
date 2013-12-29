@@ -207,6 +207,13 @@ func (ch *channel) run() {
 				ch.invalidate(name)
 			}
 
+			// welcome!
+			// TODO: rejection
+			c.send(joinPartRequest{
+				Cmd:     "j",
+				Channel: ch.name,
+			})
+
 			// $listeners
 			ct := len(ch.listeners)
 			ch.vars["$listeners"] = ct

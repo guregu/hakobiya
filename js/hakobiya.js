@@ -4,15 +4,15 @@ hakobiyaModule.factory('Hakobiya', function($rootScope) {
 	var Hakobiya = {
 		socket: null,
 		sendQueue: [],
-		channels: [],
 		jpCount: {},
+		chanQueue: {},
 		URL: null,
 
 		connect: function(addr) {
+			var self = this;
+
 			this.URL = addr;
 			this.socket = new WebSocket(addr);
-
-			var self = this;
 			this.socket.onopen = function() {
 				console.log("Hakobiya: connected.");
 
@@ -20,25 +20,36 @@ hakobiyaModule.factory('Hakobiya', function($rootScope) {
 				    self.send(msg);
 				});
 				self.sendQueue = [];
-			}
+			};
 			this.socket.onclose = function() {
 				console.log("Hakobiya: disconnected.");
-			}
+			};
 			this.socket.onerror = function (error) {
 			    console.log(error);
-			}
+			};
 			this.socket.onmessage = function(evt) {
 				var data = angular.fromJson(evt.data);
 				switch (data.x) {
 					case 's': //set
-						var qualified = data.c + "." + data.n;
-						$rootScope.$broadcast(qualified, data.v);
+						var id = data.c + "." + data.n;
+						$rootScope.$broadcast(id, data.v);
+						break;
+					case 'j': //joined
+						self.jpCount[data.c] = 1;
+						// send any waiting msgs
+						angular.forEach(self.chanQueue[data.c], function(msg) {
+							self.send(msg);
+						});
+						self.chanQueue[data.c] = [];
+						// broadcast join event
+						var joinEvt = data.c + ":join";
+						$rootScope.$broadcast(joinEvt, true); 
 						break;
 					case '!': //error
 						console.log("error (" + data.w + "): " + data.m);
 						break;
 				}
-			}
+			};
 		},
 		send: function(data) {
 			if (this.socket && this.socket.readyState == 1) {
@@ -47,13 +58,27 @@ hakobiyaModule.factory('Hakobiya', function($rootScope) {
 				this.sendQueue.push(data);
 			}
 		},
+		sendTo: function(channel, data) {
+			if (this.joined(channel)) {
+				this.send(data);
+			} else {
+				// enqueue a msg for when we join
+				if (this.chanQueue[channel]) {
+					this.chanQueue[channel].push(data);
+				} else {
+					this.chanQueue[channel] = [data];
+				}
+			}	
+		},
+		joined: function(channel) {
+			return this.jpCount[channel] > 0;
+		},
 		join: function(channel) {
 			if (!this.jpCount[channel]) {
 				this.send({
 					x: 'j',
 					c: channel
 				});
-				this.jpCount[channel] = 1;
 			} else {
 				this.jpCount[channel] += 1;
 			}
@@ -67,19 +92,33 @@ hakobiyaModule.factory('Hakobiya', function($rootScope) {
 				});
 			}
 		},
-		get: function(channel, vars) {
-			this.send({
+		get: function(channel, v) {
+			this.sendTo(channel, {
 				x: 'g',
+				c: channel,
+				n: v
+			});
+		},
+		multiget: function(channel, vars) {
+			this.sendTo(channel, {
+				x: 'G',
 				c: channel,
 				n: vars
 			});
 		},
 		set: function(channel, variable, value) {
-			this.send({
+			this.sendTo(channel, {
 				x: 's',
 				c: channel,
 				n: variable,
 				v: value
+			});
+		},
+		multiset: function(channel, vars) {
+			this.sendTo(channel, {
+				x: 'S',
+				c: channel,
+				v: vars,
 			});
 		},
 		bind: function($scope, chvar, binding) {
@@ -107,27 +146,34 @@ hakobiyaModule.factory('Hakobiya', function($rootScope) {
 			});
 
 			// let the binding begin
+			var requestableSigils = "&$%";
+			var settableSigils = "%";
 			var request = [];
 			angular.forEach(binding, function(hvar, scopevar) {
 				var sigil = hvar[0];
-				if (!$scope[scopevar]) {
-					var notRequestable = "=";
-					if (notRequestable.indexOf(sigil) == -1) {
+				var requestable = requestableSigils.indexOf(sigil) != -1;
+				if (requestable) {
+					var value = $scope[scopevar];
+					var settable = settableSigils.indexOf(sigil) != -1;
+					if (!value) {
 						request.push(hvar);
+					} else if (settable) {
+						self.set(chan, hvar, value);
 					}
 				}
-				var qualified = chan + "." + hvar;
+
+				var id = chan + "." + hvar;
 				switch (sigil) {
 					case '&': // magic var, one-way server -> client binding
 					case '$': // system var, same
-						$scope.$on(qualified, function(e, value) {
+						$scope.$on(id, function(e, value) {
 							$scope.$apply(function(scope) {
 								scope[scopevar] = value;
 							});
 						});
 						break;
 					case '%': // uservars, two-way binding
-						$scope.$on(qualified, function(e, value) {
+						$scope.$on(id, function(e, value) {
 							$scope.$apply(function(scope) {
 								scope[scopevar] = value;
 							});
@@ -137,7 +183,7 @@ hakobiyaModule.factory('Hakobiya', function($rootScope) {
 						});
 						break;
 					case '#': // broadcasts, one way growing array
-						$scope.$on(qualified, function(e, value) {
+						$scope.$on(id, function(e, value) {
 							$scope.$apply(function(scope) {
 								if (scope[scopevar]) {
 									scope[scopevar].push(value);
@@ -147,31 +193,37 @@ hakobiyaModule.factory('Hakobiya', function($rootScope) {
 							});
 						});
 						break;
-					case '=': // channel, like a two-way broadcast
-						$scope[scopevar] = {
-							msgs: [],
-							$on: function(func) {
-								return $scope.$on(qualified, func);
-							},
-							send: function(data) {
-								self.set(chan, hvar, data);
-							},
-							toString: function() {
-								return qualified;
-							}
-						};
-						$scope.$on(qualified, function(e, value) {
-							$scope.$apply(function(scope) {
-								scope[scopevar].msgs.push(value);
+					case '=': // wire, like a two-way broadcast. special array
+						var wire = [];
+						wire.id = id;
+						wire.enabled = false;
+						wire.enable = function() {
+							var disableFn = $scope.$on(id, function(e, value) {
+								$scope.$apply(function(scope) {
+									scope[scopevar].push(value);
+								});
 							});
-						});
+							wire.disable = function() {
+								disableFn();
+								wire.enabled = false;
+							};
+							wire.enabled = true;
+						};
+						wire.send = function(data) {
+							self.set(chan, hvar, data);
+						};
+						wire.toString = function() {
+							return this.id;
+						};
+						wire.enable();
+						$scope[scopevar] = wire;
 						break;
 					default:
 						console.log("ERROR: unknown sigil " + hvar);
 						break;
 				}
 			});
-			this.get(chan, request);	
+			this.multiget(chan, request);	
 		}
 	};
 	return Hakobiya;

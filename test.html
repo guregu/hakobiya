@@ -8,7 +8,6 @@
 			// stuff
 			var testModule = angular.module('testGuy', ['hakobiya']);
 			testModule.run(function (Hakobiya) {
-				console.log(Hakobiya);
 				Hakobiya.connect("ws://localhost:8080/ws");
 			});
 
@@ -55,7 +54,7 @@
 			everyone has the same name: {{sameName}} <br />
 			% of people named 'Guest': {{guestPct * 100}}% <br />
 			<ol>
-				<li ng-repeat="m in chat.msgs">
+				<li ng-repeat="m in chat">
 					<b>{{m.name}}</b>: {{m.msg}}
 				</li>
 			</ol>

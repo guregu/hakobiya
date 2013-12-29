@@ -15,7 +15,13 @@ type loginRequest struct {
 }
 
 type getRequest struct {
-	Cmd     string   `json:"x"` // g
+	Cmd     string `json:"x"` // g
+	Channel string `json:"c"`
+	Var     string `json:"n"`
+}
+
+type multigetRequest struct {
+	Cmd     string   `json:"x"` // G
 	Channel string   `json:"c"`
 	Vars    []string `json:"n"`
 }
@@ -25,6 +31,12 @@ type setRequest struct {
 	Channel string      `json:"c"`
 	Var     string      `json:"n"`
 	Value   interface{} `json:"v"`
+}
+
+type multisetRequest struct {
+	Cmd     string                 `json:"x"` // S
+	Channel string                 `json:"c"`
+	Values  map[string]interface{} `json:"v"`
 }
 
 type errorMessage struct {

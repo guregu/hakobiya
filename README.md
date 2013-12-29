@@ -85,10 +85,10 @@ expose = ["$listeners"]
 
 Defines a per-user value. You can use these values when computing magic variables.
 
-| Name        | Type | Required?  | Default | Description                  |
-| ----------- | ---- | ---------- | ------- | ---------------------------- |
-| type        | type | *optional* | `"any"` | The type of this variable    |
-| ~~default~~ | *    | *optional* |         | Default value for this type  |
+| Name        | Type | Required?  | Default | Description                      |
+| ----------- | ---- | ---------- | ------- | -------------------------------- |
+| type        | type | *optional* | `"any"` | The type of this variable        |
+| ~~default~~ | *    | *optional* |         | Default value for this variable  |
 
 #### Example
 Defines a string user variable called `%username`, and a boolean variable called `%typing`.
