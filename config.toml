@@ -14,7 +14,7 @@ dirs = ["js"]
 [api]
 enabled = true
 path = "/api"
-key = "abcdefg"
+key = "123"
 #allowedIPs = ["127.0.0.1"]
 
 #######################

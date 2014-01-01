@@ -1,26 +1,47 @@
 package main
 
 import (
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"log"
+	"sync"
 
 	"code.google.com/p/go.net/websocket"
 )
 
+var clientsTable = make(map[clientID]*client)
+var clientsTableLock = &sync.RWMutex{}
+
+type clientID string
+
 type client struct {
-	userid    string
+	id        clientID
 	socket    *websocket.Conn
 	listening map[string]*channel
 
 	sendq chan interface{}
 }
 
-func (c client) isUser(id string) bool {
-	return c.userid == id
+func newClient(socket *websocket.Conn) *client {
+	c := &client{
+		id:        generateID(),
+		socket:    socket,
+		listening: make(map[string]*channel),
+
+		sendq: make(chan interface{}),
+	}
+	addClient(c)
+	return c
 }
 
 func (c *client) send(msg interface{}) {
 	c.sendq <- msg
+}
+
+func (c *client) setID(id clientID) {
+	renameClient(c.id, id)
+	c.id = id
 }
 
 func (c *client) writer() {
@@ -55,7 +76,7 @@ func (c *client) run() {
 			continue
 		}
 
-		log.Printf("Got: %s\n-> %s\n", req.Cmd, string(data))
+		//		log.Printf("Got: %s\n-> %s\n", req.Cmd, string(data))
 
 		switch req.Cmd {
 		case "j": //join
@@ -139,9 +160,11 @@ func (c *client) run() {
 			log.Printf("Unknown req %s\n", req.Cmd)
 		}
 	}
+	// post-disconnect cleanup
 	c.socket.Close()
 	c.partAll()
 	close(c.sendq)
+	removeClient(c.id)
 }
 
 func (c *client) partAll() {
@@ -149,4 +172,46 @@ func (c *client) partAll() {
 		g.part <- c
 	}
 	c.listening = make(map[string]*channel)
+}
+
+func addClient(c *client) {
+	clientsTableLock.Lock()
+	defer clientsTableLock.Unlock()
+
+	clientsTable[c.id] = c
+}
+
+func getClient(id clientID) *client {
+	clientsTableLock.RLock()
+	defer clientsTableLock.RUnlock()
+
+	return clientsTable[id]
+}
+
+func removeClient(id clientID) {
+	clientsTableLock.Lock()
+	defer clientsTableLock.Unlock()
+
+	delete(clientsTable, id)
+}
+
+func renameClient(old clientID, newVal clientID) {
+	clientsTableLock.Lock()
+	defer clientsTableLock.Unlock()
+
+	c := clientsTable[old]
+	delete(clientsTable, old)
+	clientsTable[newVal] = c
+}
+
+func generateID() clientID {
+	const size = 24
+	var b = make([]byte, size)
+	_, err := rand.Read(b)
+	if err != nil {
+		log.Printf("Error in generateID(): %v", err)
+	}
+	security := base64.StdEncoding.EncodeToString(b)
+	id := "_" + security
+	return clientID(id)
 }

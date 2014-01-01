@@ -196,7 +196,7 @@ function ChatCtrl($scope, Hakobiya) {
 }
 ```
 
-**User variables** have two-way binding. **System variables** have one-way binding. **Broadcasts** have one-way binding and are represented as an array. **Wires** are a special case: they are an object that keeps all its messages in the `.msgs` property, you can use the `.send()` method to send data. 
+**User variables** have two-way binding. **System variables** have one-way binding. **Broadcasts** have one-way binding and are represented as an array. **Wires** are a special array: they have a `.send()` method to send data. 
 
 You can manually listen for changes to any of these variables like so:
 ```javascript

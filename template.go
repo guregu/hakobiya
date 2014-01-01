@@ -20,6 +20,7 @@ func (cfg channelTemplate) apply(ch *channel) {
 	ch.restrict = cfg.Restrict
 	// broadcasts
 	for name, broadcastCfg := range cfg.Broadcast {
+		ch.index[name] = BroadcastVar
 		ch.broadcasts[name] = *broadcastCfg
 	}
 	// expose
@@ -28,6 +29,7 @@ func (cfg channelTemplate) apply(ch *channel) {
 		ch.index[varName] = SystemVar
 		switch ex {
 		case "$listeners":
+			ch.vars["$listeners"] = 0
 			ch.magic["$listeners"] = func() interface{} {
 				return len(ch.listeners)
 			}

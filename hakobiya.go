@@ -9,7 +9,6 @@ import (
 	"unicode/utf8"
 
 	"code.google.com/p/go.net/websocket"
-	"github.com/drone/routes"
 )
 
 var configFile = flag.String("config", "config.toml", "config file path")
@@ -39,13 +38,8 @@ func main() {
 	http.Handle(cfg.Server.Path, websocket.Handler(serveWS))
 	// api
 	if cfg.API.Enabled {
-		apiKey = cfg.API.Key
 		apiPath := cfg.API.Path
-		mux := routes.New()
-		mux.Post(apiPath+"/:channel/broadcast", apiBroadcast)
-		mux.Get(apiPath+"/:channel/debug", apiDebug)
-		mux.Filter(apiKeyFilter)
-		http.Handle(apiPath+"/", mux)
+		http.Handle(apiPath+"/", apiHandler(cfg.API))
 		log.Printf("API: enabled at %s/", apiPath)
 	} else {
 		log.Printf("API: off")
@@ -78,12 +72,8 @@ func index(w http.ResponseWriter, r *http.Request) {
 }
 
 func serveWS(ws *websocket.Conn) {
-	c := &client{
-		socket:    ws,
-		listening: make(map[string]*channel),
-
-		sendq: make(chan interface{}),
-	}
+	c := newClient(ws)
+	log.Printf("new buddy: %v", c.id)
 	go c.writer()
 	c.run()
 }

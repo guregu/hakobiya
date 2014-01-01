@@ -40,8 +40,8 @@ type multisetRequest struct {
 }
 
 type errorMessage struct {
-	Cmd     string `json:"x"` // !
-	ReplyTo string `json:"w"`
+	Cmd     string `json:"x,omitempty"` // !
+	ReplyTo string `json:"w,omitempty"`
 	Channel string `json:"c,omitempty"`
 	Var     string `json:"n,omitempty"`
 	Message string `json:"m,omitempty"`

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"log"
 	"sync"
 	"unicode/utf8"
@@ -30,6 +31,11 @@ var sigilTable = map[uint8]varKind{
 	'=': WireVar,
 }
 
+type identifier struct {
+	sigil rune
+	name  string
+}
+
 type broadcast struct {
 	Type     jsType
 	ReadOnly bool
@@ -48,9 +54,32 @@ type getter struct {
 }
 
 type setter struct {
-	From  *client
-	Var   string
-	Value interface{}
+	From      *client
+	Var       string
+	Value     interface{}
+	Overwrite map[string]interface{}
+}
+
+type order struct {
+	get getter
+	to  chan delivery
+}
+
+type delivery struct {
+	value interface{}
+	err   *errorMessage
+}
+
+type uservarMap map[*client]interface{}
+
+// wouldn't it be cool if json.Marshal used .String() so I didn't have to do this?
+func (m uservarMap) MarshalJSON() (b []byte, err error) {
+	idMap := make(map[string]interface{})
+	for c, v := range m {
+		idMap[string(c.id)] = v
+	}
+	b, err = json.Marshal(idMap)
+	return
 }
 
 type channel struct {
@@ -63,15 +92,16 @@ type channel struct {
 	broadcasts map[string]broadcast
 	wires      map[string]wire
 	vars       map[string]interface{}
-	uservars   map[string]map[*client]interface{}
+	uservars   map[string]uservarMap
 	magic      map[string]func() interface{}
 	cache      map[string]interface{}
 	deps       map[string][]string
 
-	get  chan getter
-	set  chan setter
-	join chan *client
-	part chan *client
+	get     chan getter
+	set     chan setter
+	join    chan *client
+	part    chan *client
+	deliver chan order
 }
 
 func newChannel(name string) *channel {
@@ -88,15 +118,16 @@ func newChannel(name string) *channel {
 		broadcasts: make(map[string]broadcast),
 		wires:      make(map[string]wire),
 		vars:       make(map[string]interface{}),
-		uservars:   make(map[string]map[*client]interface{}),
+		uservars:   make(map[string]uservarMap),
 		magic:      make(map[string]func() interface{}),
 		cache:      make(map[string]interface{}),
 		deps:       make(map[string][]string),
 
-		get:  make(chan getter),
-		set:  make(chan setter),
-		join: make(chan *client),
-		part: make(chan *client),
+		get:     make(chan getter),
+		set:     make(chan setter),
+		join:    make(chan *client),
+		part:    make(chan *client),
+		deliver: make(chan order),
 	}
 	cfg.apply(ch)
 	return ch
@@ -167,7 +198,12 @@ func (ch *channel) value(fullName string, from *client) (val interface{}, err *e
 
 	switch kind {
 	case UserVar:
-		val = ch.uservars[name][from]
+		// returns everyone's stuff if 'from' is missing
+		if from != nil {
+			val = ch.uservars[name][from]
+		} else {
+			val = ch.uservars[name]
+		}
 	case MagicVar:
 		val = ch.cache[name]
 	case SystemVar:
@@ -200,19 +236,19 @@ func (ch *channel) run() {
 		case c := <-ch.join:
 			ch.listeners[c] = true
 
-			// new guy joined so we gotta set up his vars
-			for name, values := range ch.uservars {
-				// TODO: some kind of default value setting, not just zero?
-				values[c] = ch.types[name].zero()
-				ch.invalidate(name)
-			}
-
 			// welcome!
 			// TODO: rejection
 			c.send(joinPartRequest{
 				Cmd:     "j",
 				Channel: ch.name,
 			})
+
+			// new guy joined so we gotta set up his vars
+			for name, values := range ch.uservars {
+				// TODO: some kind of default value setting, not just zero?
+				values[c] = ch.types[name].zero()
+				ch.invalidate(name)
+			}
 
 			// $listeners
 			ct := len(ch.listeners)
@@ -258,6 +294,13 @@ func (ch *channel) run() {
 				Value:   val,
 			}
 			getr.From.send(msg)
+		case o := <-ch.deliver:
+			val, err := ch.value(o.get.Var, o.get.From)
+			d := delivery{
+				value: val,
+				err:   err,
+			}
+			o.to <- d
 		case setr := <-ch.set:
 			kind, name, err := ch.lookup(setr.Var)
 			if err != nil {
@@ -299,6 +342,12 @@ func (ch *channel) run() {
 				msg := setr.Value
 				if w.rewrite {
 					msg = w.transform(ch, w, setr.From, setr.Value)
+				}
+				if setr.Overwrite != nil && w.outputType == jsObject {
+					m := msg.(map[string]interface{})
+					for k, v := range setr.Overwrite {
+						m[k] = v
+					}
 				}
 				ch.notify(setr.Var, msg)
 			}

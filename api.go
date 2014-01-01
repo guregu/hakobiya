@@ -7,17 +7,18 @@ import (
 	"github.com/drone/routes"
 )
 
-// TODO: make this more better/secure
-var apiKey string
-
-type broadcastRequest struct {
-	To    string      `json:"to"`
-	Value interface{} `json:"value"`
+type apiRequest struct {
+	Var       string                 `json:"var"`
+	Value     interface{}            `json:"value,omitempty"`
+	For       string                 `json:"for,omitempty"`
+	Key       string                 `json:"key,omitempty"`
+	Overwrite map[string]interface{} `json:"overwrite,omitempty"`
 }
 
 type apiResponse struct {
-	Code responseCode `json:"code"`
-	Msg  string       `json:"msg"`
+	Code  responseCode `json:"code"`
+	Msg   string       `json:"msg,omitempty"`
+	Value interface{}  `json:"value,omitempty"`
 }
 
 type responseCode int
@@ -28,33 +29,82 @@ const (
 	API_Error           responseCode = -1
 )
 
-func apiBroadcast(w http.ResponseWriter, r *http.Request) {
+func apiHandler(cfg apiConfig) http.Handler {
+	mux := routes.New()
+	mux.Post(cfg.Path+"/:channel/set", apiSet)
+	mux.Post(cfg.Path+"/:channel/fetch", apiFetch)
+	return mux
+}
+
+func apiSet(w http.ResponseWriter, r *http.Request) {
 	params := r.URL.Query()
 	name := params.Get(":channel")
-	// TODO: check if channel is even valid in the first place?
 	if !channelExists(name) {
-		log.Printf("Broadcast to nowhere: %s", name)
-		routes.ServeJson(w, apiResponse{API_NothingHappened, "no one's listening"})
+		log.Printf("API: set to empty channel: %s", name)
+		routes.ServeJson(w, apiResponse{API_NothingHappened, "no one's listening", name})
 		return
 	}
 	ch := getChannel(name)
-	breq := broadcastRequest{}
-	routes.ReadJson(r, &breq)
+	req := apiRequest{}
+	err := routes.ReadJson(r, &req)
+	if err != nil {
+		http.Error(w, "bad json", http.StatusBadRequest)
+		return
+	}
+	if !checkKey(req) {
+		http.Error(w, "bad key", http.StatusUnauthorized)
+		return
+	}
+
 	msg := setter{
-		Var:   breq.To,
-		Value: breq.Value,
+		Var:       req.Var,
+		Value:     req.Value,
+		Overwrite: req.Overwrite,
+		//TODO: From
 	}
 	ch.set <- msg
-	routes.ServeJson(w, apiResponse{API_OK, "sent"})
+	routes.ServeJson(w, apiResponse{API_OK, "set " + req.Var, req.Value})
 }
 
-func apiDebug(w http.ResponseWriter, r *http.Request) {
-
-}
-
-func apiKeyFilter(w http.ResponseWriter, r *http.Request) {
+func apiFetch(w http.ResponseWriter, r *http.Request) {
 	params := r.URL.Query()
-	if params.Get("key") != apiKey {
-		http.Error(w, "", http.StatusUnauthorized)
+	name := params.Get(":channel")
+	if !channelExists(name) {
+		log.Printf("API: get to empty channel: %s", name)
+		routes.ServeJson(w, apiResponse{API_NothingHappened, "no one's there", name})
+		return
 	}
+	ch := getChannel(name)
+	req := apiRequest{}
+	err := routes.ReadJson(r, &req)
+	if err != nil {
+		http.Error(w, "bad json", http.StatusBadRequest)
+		return
+	}
+	if !checkKey(req) {
+		http.Error(w, "bad key", http.StatusUnauthorized)
+	} else {
+		mailbox := make(chan delivery)
+		fetch := order{
+			get: getter{
+				Var: req.Var,
+				//TODO: From
+			},
+			to: mailbox,
+		}
+		ch.deliver <- fetch
+		d := <-mailbox
+		if d.err == nil {
+			routes.ServeJson(w, apiResponse{API_OK, "got " + req.Var, d.value})
+		} else {
+			routes.ServeJson(w, apiResponse{API_Error, "couldn't get", d.err})
+		}
+	}
+}
+
+func checkKey(req apiRequest) bool {
+	if currentConfig.API.Key == "" {
+		return true
+	}
+	return currentConfig.API.Key == req.Key
 }

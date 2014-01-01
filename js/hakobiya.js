@@ -29,6 +29,7 @@ hakobiyaModule.factory('Hakobiya', function($rootScope) {
 			};
 			this.socket.onmessage = function(evt) {
 				var data = angular.fromJson(evt.data);
+				console.log(data);
 				switch (data.x) {
 					case 's': //set
 						var id = data.c + "." + data.n;
@@ -42,7 +43,7 @@ hakobiyaModule.factory('Hakobiya', function($rootScope) {
 						});
 						self.chanQueue[data.c] = [];
 						// broadcast join event
-						var joinEvt = data.c + ":join";
+						var joinEvt = data.c + " join";
 						$rootScope.$broadcast(joinEvt, true); 
 						break;
 					case '!': //error
