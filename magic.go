@@ -9,6 +9,14 @@ type spell struct {
 	name  string
 }
 
+func (s spell) generic() spell {
+	return spell{s.type_.any(), s.name}
+}
+
+func (s spell) String() string {
+	return string(s.type_) + ":" + s.name
+}
+
 type magicEntry struct {
 	f          magicMaker
 	returnType jsType
@@ -16,7 +24,7 @@ type magicEntry struct {
 
 // magic function generator
 // func(*channel, src var name, params)
-type magicMaker func(*channel, string, map[string]interface{}) func() interface{}
+type magicMaker func(*channel, identifier, map[string]interface{}) func() interface{}
 
 func registerMagic(sig spell, f magicMaker, returnType jsType) {
 	grimoire[sig] = magicEntry{f, returnType}
@@ -40,7 +48,7 @@ func defaultValue(sig spell) interface{} {
 	return nil
 }
 
-func makeMagic(ch *channel, src string, sig spell, params map[string]interface{}) func() interface{} {
+func makeMagic(ch *channel, src identifier, sig spell, params map[string]interface{}) func() interface{} {
 	m, ok := grimoire[sig]
 	if !ok {
 		// is there a generic function?
@@ -50,12 +58,4 @@ func makeMagic(ch *channel, src string, sig spell, params map[string]interface{}
 		}
 	}
 	return m.f(ch, src, params)
-}
-
-func (s spell) generic() spell {
-	return spell{s.type_.any(), s.name}
-}
-
-func (s spell) String() string {
-	return string(s.type_) + ":" + s.name
 }

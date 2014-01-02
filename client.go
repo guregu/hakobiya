@@ -54,7 +54,7 @@ func (c *client) writer() {
 			}
 			err := websocket.JSON.Send(c.socket, msg)
 			if err != nil {
-				// abandon ship
+				panic(err)
 				return
 			}
 		}
@@ -76,7 +76,7 @@ func (c *client) run() {
 			continue
 		}
 
-		//		log.Printf("Got: %s\n-> %s\n", req.Cmd, string(data))
+		log.Printf("Got: %s\n-> %s\n", req.Cmd, string(data))
 
 		switch req.Cmd {
 		case "j": //join

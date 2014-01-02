@@ -8,7 +8,7 @@ import (
 )
 
 type apiRequest struct {
-	Var       string                 `json:"var"`
+	Var       identifier             `json:"var"`
 	Value     interface{}            `json:"value,omitempty"`
 	For       string                 `json:"for,omitempty"`
 	Key       string                 `json:"key,omitempty"`
@@ -63,7 +63,7 @@ func apiSet(w http.ResponseWriter, r *http.Request) {
 		//TODO: From
 	}
 	ch.set <- msg
-	routes.ServeJson(w, apiResponse{API_OK, "set " + req.Var, req.Value})
+	routes.ServeJson(w, apiResponse{API_OK, "set " + req.Var.String(), req.Value})
 }
 
 func apiFetch(w http.ResponseWriter, r *http.Request) {
@@ -84,7 +84,7 @@ func apiFetch(w http.ResponseWriter, r *http.Request) {
 	if !checkKey(req) {
 		http.Error(w, "bad key", http.StatusUnauthorized)
 	} else {
-		mailbox := make(chan delivery)
+		mailbox := make(chan goods)
 		fetch := order{
 			get: getter{
 				Var: req.Var,
@@ -93,11 +93,11 @@ func apiFetch(w http.ResponseWriter, r *http.Request) {
 			to: mailbox,
 		}
 		ch.deliver <- fetch
-		d := <-mailbox
-		if d.err == nil {
-			routes.ServeJson(w, apiResponse{API_OK, "got " + req.Var, d.value})
+		g := <-mailbox
+		if g.err == nil {
+			routes.ServeJson(w, apiResponse{API_OK, "got " + req.Var.String(), g.value})
 		} else {
-			routes.ServeJson(w, apiResponse{API_Error, "couldn't get", d.err})
+			routes.ServeJson(w, apiResponse{API_Error, "couldn't get", g.err})
 		}
 	}
 }

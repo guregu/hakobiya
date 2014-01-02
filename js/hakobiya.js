@@ -29,7 +29,7 @@ hakobiyaModule.factory('Hakobiya', function($rootScope) {
 			};
 			this.socket.onmessage = function(evt) {
 				var data = angular.fromJson(evt.data);
-				console.log(data);
+				console.log(evt.data);
 				switch (data.x) {
 					case 's': //set
 						var id = data.c + "." + data.n;

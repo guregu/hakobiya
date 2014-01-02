@@ -3,7 +3,7 @@ package main
 // these are the functions you can use in [channel.magic.*] stuff
 
 // returns the sum
-func _int_sum(ch *channel, src string, params map[string]interface{}) func() interface{} {
+func _int_sum(ch *channel, src identifier, params map[string]interface{}) func() interface{} {
 	return func() interface{} {
 		values, _ := ch.values(src)
 		sum := 0
@@ -15,7 +15,7 @@ func _int_sum(ch *channel, src string, params map[string]interface{}) func() int
 }
 
 // returns the average (rounded to an int)
-func _int_avg(ch *channel, src string, params map[string]interface{}) func() interface{} {
+func _int_avg(ch *channel, src identifier, params map[string]interface{}) func() interface{} {
 	sumFunc := _int_sum(ch, src, params)
 	return func() interface{} {
 		sum, ct := sumFunc().(int), len(ch.listeners)
@@ -24,7 +24,7 @@ func _int_avg(ch *channel, src string, params map[string]interface{}) func() int
 }
 
 // returns the maximum value
-func _int_max(ch *channel, src string, params map[string]interface{}) func() interface{} {
+func _int_max(ch *channel, src identifier, params map[string]interface{}) func() interface{} {
 	return func() interface{} {
 		values, _ := ch.values(src)
 		var max *int
@@ -43,7 +43,7 @@ func _int_max(ch *channel, src string, params map[string]interface{}) func() int
 }
 
 // returns the minimum value
-func _int_min(ch *channel, src string, params map[string]interface{}) func() interface{} {
+func _int_min(ch *channel, src identifier, params map[string]interface{}) func() interface{} {
 	return func() interface{} {
 		values, _ := ch.values(src)
 		var min *int
@@ -62,7 +62,7 @@ func _int_min(ch *channel, src string, params map[string]interface{}) func() int
 }
 
 // returns true if all values are the same
-func _any_same(ch *channel, src string, params map[string]interface{}) func() interface{} {
+func _any_same(ch *channel, src identifier, params map[string]interface{}) func() interface{} {
 	return func() interface{} {
 		values, _ := ch.values(src)
 		var first interface{}
@@ -84,7 +84,7 @@ func _any_same(ch *channel, src string, params map[string]interface{}) func() in
 
 // returns true if all source values equal the 'value' parameter
 // if no 'value' param is given, checks if all values are non-zero
-func _any_all(ch *channel, src string, params map[string]interface{}) func() interface{} {
+func _any_all(ch *channel, src identifier, params map[string]interface{}) func() interface{} {
 	cmp, ok := params["value"]
 	if ok {
 		return func() interface{} {
@@ -99,8 +99,7 @@ func _any_all(ch *channel, src string, params map[string]interface{}) func() int
 	}
 
 	// no comaprison value, so see if every value is non-zero
-	_, name, _ := ch.lookup(src)
-	srcType := ch.types[name]
+	srcType := ch.types[src]
 	return func() interface{} {
 		values, _ := ch.values(src)
 		for _, val := range values {
@@ -114,7 +113,7 @@ func _any_all(ch *channel, src string, params map[string]interface{}) func() int
 
 // returns true if any of the source values equal the 'value' parameter
 // if no 'value' param is given, checks if there are any non-zero values
-func _any_any(ch *channel, src string, params map[string]interface{}) func() interface{} {
+func _any_any(ch *channel, src identifier, params map[string]interface{}) func() interface{} {
 	cmp, ok := params["value"]
 	if ok {
 		return func() interface{} {
@@ -129,8 +128,7 @@ func _any_any(ch *channel, src string, params map[string]interface{}) func() int
 	}
 
 	// no comaprison value, so see if there's any non-zero values
-	_, name, _ := ch.lookup(src)
-	srcType := ch.types[name]
+	srcType := ch.types[src]
 	return func() interface{} {
 		values, _ := ch.values(src)
 		for _, v := range values {
@@ -144,7 +142,7 @@ func _any_any(ch *channel, src string, params map[string]interface{}) func() int
 
 // counts the number of sourve values that equal the 'value' parameter
 // if no 'value' param is given, counts the number of non-zero values
-func _any_count(ch *channel, src string, params map[string]interface{}) func() interface{} {
+func _any_count(ch *channel, src identifier, params map[string]interface{}) func() interface{} {
 	cmp, ok := params["value"]
 	if ok {
 		return func() interface{} {
@@ -160,8 +158,7 @@ func _any_count(ch *channel, src string, params map[string]interface{}) func() i
 	}
 
 	// no comaprison value, so count the non-zero values
-	_, name, _ := ch.lookup(src)
-	srcType := ch.types[name]
+	srcType := ch.types[src]
 	return func() interface{} {
 		values, _ := ch.values(src)
 		ct := 0
@@ -174,7 +171,7 @@ func _any_count(ch *channel, src string, params map[string]interface{}) func() i
 	}
 }
 
-func _any_percent(ch *channel, src string, params map[string]interface{}) func() interface{} {
+func _any_percent(ch *channel, src identifier, params map[string]interface{}) func() interface{} {
 	countFunc := _any_count(ch, src, params)
 	return func() interface{} {
 		listeners := len(ch.listeners)

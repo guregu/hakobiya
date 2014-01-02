@@ -12,57 +12,76 @@ type channelTemplate struct {
 	Wire      map[string]*wireDef
 }
 
-func (cfg channelTemplate) apply(ch *channel) {
-	prefix, _ := utf8.DecodeRuneInString(cfg.Prefix)
+func (tmpl channelTemplate) apply(ch *channel) {
+	prefix, _ := utf8.DecodeRuneInString(tmpl.Prefix)
 	// prefix
 	ch.prefix = prefix
 	// restrict
-	ch.restrict = cfg.Restrict
+	ch.restrict = tmpl.Restrict
 	// broadcasts
-	for name, broadcastCfg := range cfg.Broadcast {
-		ch.index[name] = BroadcastVar
-		ch.broadcasts[name] = *broadcastCfg
+	for name, broadcastCfg := range tmpl.Broadcast {
+		v := identifier{
+			sigil: '#',
+			name:  name,
+			kind:  BroadcastVar,
+		}
+		ch.index[v] = true
+		ch.broadcasts[v] = *broadcastCfg
 	}
 	// expose
-	for _, ex := range cfg.Expose {
-		varName := ex[1:]
-		ch.index[varName] = SystemVar
-		switch ex {
-		case "$listeners":
-			ch.vars["$listeners"] = 0
-			ch.magic["$listeners"] = func() interface{} {
-				return len(ch.listeners)
-			}
+	for _, b := range tmpl.Expose {
+		// TODO there is a bug in the TOML library
+		// that prevents arrays of indentifier, fix it
+		v := identifier{}
+		v.UnmarshalText([]byte(b))
+		ch.index[v] = true
+		switch v {
+		case listenersVar:
+			ch.vars[listenersVar] = 0
 		default:
-			panic("Unknown system var in expose: " + ex)
+			panic("Unknown system var in expose: " + v.String())
 		}
 	}
 	// user vars
-	for varName, v := range cfg.Vars {
-		ch.index[varName] = UserVar
-		ch.uservars[varName] = make(map[*client]interface{})
-		ch.types[varName] = v.Type
+	for name, def := range tmpl.Vars {
+		v := identifier{
+			sigil: '%',
+			name:  name,
+			kind:  UserVar,
+		}
+		ch.index[v] = true
+		ch.uservars[v] = make(map[*client]interface{})
+		ch.types[v] = def.Type
 		// TODO set read only
 	}
 	// TODO: channel vars?
 	// magic
-	for varName, m := range cfg.Magic {
-		ch.index[varName] = MagicVar
-		srcVar := m.Src[1:]
-		v := cfg.Vars[srcVar]
-		s := spell{v.Type, m.Func}
-		ch.magic[varName] = makeMagic(ch, m.Src, s, m.Params)
-		ch.deps[srcVar] = append(ch.deps[srcVar], varName)
+	for name, m := range tmpl.Magic {
+		v := identifier{
+			sigil: '&',
+			name:  name,
+			kind:  MagicVar,
+		}
+		ch.index[v] = true
+		srcVar := tmpl.Vars[m.Src.name]
+		s := spell{srcVar.Type, m.Func}
+		ch.magic[v] = makeMagic(ch, m.Src, s, m.Params)
+		ch.deps[m.Src] = append(ch.deps[m.Src], v)
 		// set default value for magic cache
-		ch.cache[varName] = defaultValue(s)
+		ch.cache[v] = defaultValue(s)
 	}
 	// wires
 	// TODO: some kind of generic function chain thingy to make the logic here more sane
-	for varName, wireCfg := range cfg.Wire {
-		ch.index[varName] = WireVar
+	for name, wireCfg := range tmpl.Wire {
+		v := identifier{
+			sigil: '=',
+			name:  name,
+			kind:  WireVar,
+		}
+		ch.index[v] = true
 		w := wire{} // our baby wire
 		if wireCfg.Input == nil {
-			panic("no input definition for wire: " + varName)
+			panic("no input definition for wire: " + name)
 		} else {
 			w.inputType = wireCfg.Input.Type
 		}
@@ -73,12 +92,28 @@ func (cfg channelTemplate) apply(ch *channel) {
 			if wireCfg.Output.hasRewrite() {
 				w.rewrite = true
 				w.transform = func(ch *channel, _wire wire, from *client, input interface{}) interface{} {
-					return wireCfg.Output.Rewrite.rewrite(ch, from, input)
+					return wireCfg.Output.rewrite.transform(ch, from, input)
 				}
 			}
 		}
-		ch.wires[varName] = w
+		ch.wires[v] = w
 	}
+}
+
+func (tmpl channelTemplate) defines(v identifier) bool {
+	switch v.kind {
+	case UserVar:
+		return tmpl.Vars[v.name] != nil
+	case MagicVar:
+		return tmpl.Magic[v.name] != nil
+	case BroadcastVar:
+		return tmpl.Broadcast[v.name] != nil
+	case WireVar:
+		return tmpl.Wire[v.name] != nil
+	case SystemVar:
+		return true // TODO: proper lookup
+	}
+	return false
 }
 
 type varDef struct {
@@ -88,7 +123,7 @@ type varDef struct {
 }
 
 type magicDef struct {
-	Src    string
+	Src    identifier
 	Func   string
 	Param  interface{} // shortcut for Params["value"]
 	Params map[string]interface{}
@@ -104,31 +139,34 @@ type wireDefInput struct {
 	Trim int
 }
 
-type rewriteDef map[string]string
-
 type wireDefOutput struct {
-	Type    jsType
-	Rewrite rewriteDef
+	Type           jsType
+	RewriteStrings map[string]string `toml:"rewrite"` // TOML bug
+	rewrite        rewriteDef        // TODO FIXME
 }
 
 func (w wireDefOutput) hasRewrite() bool {
-	return len(w.Rewrite) > 0
+	return len(w.RewriteStrings) > 0
 }
 
-func (rw rewriteDef) rewrite(ch *channel, from *client, input interface{}) map[string]interface{} {
+type rewriteDef map[string]identifier
+
+func (rw rewriteDef) transform(ch *channel, from *client, input interface{}) map[string]interface{} {
 	transformed := make(map[string]interface{})
-	for fieldName, hVar := range rw {
-		// literals:
-		if hVar[0] == '\'' {
-			transformed[fieldName] = hVar[1:]
-		} else {
-			switch hVar {
-			case "$input":
-				transformed[fieldName] = input
-			default:
-				v, _ := ch.value(hVar, from)
-				transformed[fieldName] = v
+	for field, v := range rw {
+		switch v.kind {
+		case LiteralString:
+			transformed[field] = v.name
+		case SystemVar:
+			// special case for $input
+			if v.name == "input" {
+				transformed[field] = input
+				continue
 			}
+			fallthrough
+		default:
+			value, _ := ch.value(v, from)
+			transformed[field] = value
 		}
 	}
 	return transformed

@@ -43,6 +43,25 @@ var defaultAPIConfig = apiConfig{
 	Path: "/api",
 }
 
+func parseConfig(file string) (cfg config, ok bool) {
+	_, err := toml.DecodeFile(file, &cfg)
+	if err != nil {
+		panic(err)
+	}
+	cfg.prepare()
+
+	var errors []string
+	ok, errors = cfg.check()
+	if !ok {
+		fmt.Printf("ERROR: %d error(s) in %s:\n", len(errors), file)
+		for n, e := range errors {
+			fmt.Printf("#%d: %s\n", n+1, e)
+		}
+	}
+
+	return cfg, ok
+}
+
 func (cfg *config) prepare() {
 	// [server]
 	if cfg.Server.Name == "" {
@@ -81,6 +100,14 @@ func (cfg *config) prepare() {
 			if w.Output.hasRewrite() {
 				// TODO: warn the user if they have it set to something other than 'object'?
 				w.Output.Type = jsObject
+
+				// TOML bug hack
+				w.Output.rewrite = make(rewriteDef)
+				for n, str := range w.Output.RewriteStrings {
+					v := identifier{}
+					v.UnmarshalText([]byte(str))
+					w.Output.rewrite[n] = v
+				}
 			} else {
 				w.Output.Type = w.Output.Type.rescue()
 			}
@@ -149,7 +176,15 @@ func (cfg config) check() (ok bool, errors []string) {
 				channelMap[ch.Prefix] = true
 			}
 		}
-		// TODO: check ch.Expose
+		// expose
+		for _, b := range ch.Expose {
+			// TODO: TOML bug fix
+			v := identifier{}
+			v.UnmarshalText([]byte(b))
+			if v.kind != SystemVar {
+				errors = append(errors, fmt.Sprintf("(%s) [channel.expose] Not a system variable: %s", ch.Prefix, v))
+			}
+		}
 		// broadcast check
 		for name, b := range ch.Broadcast {
 			if !b.Type.valid() {
@@ -164,28 +199,14 @@ func (cfg config) check() (ok bool, errors []string) {
 		}
 		// magic check
 		for name, m := range ch.Magic {
-			if m.Src == "" {
-				errors = append(errors, fmt.Sprintf("(%s) [channel.magic.%s] Missing 'src' source variable definition!", ch.Prefix, name))
-			} else {
-				sigil, _, varOk := checkVarName(m.Src)
-				if !varOk {
-					errors = append(errors, fmt.Sprintf("(%s) [channel.magic.%s] Invalid source variable: %s",
-						ch.Prefix, name, m.Src))
-				}
-				if !checkSigil(sigil, UserVar) {
-					errors = append(errors, fmt.Sprintf("(%s) [channel.magic.%s] Invalid sigil for source variable: %s (expected %%...)",
-						ch.Prefix, name, m.Src))
-				}
-
-			}
 			if m.Func == "" {
 				errors = append(errors, fmt.Sprintf("(%s) [channel.magic.%s] Missing 'func' magic function definition!", ch.Prefix, name))
 			} else {
-				_, naked, _ := checkVarName(m.Src)
-				if srcVar, ok := ch.Vars[naked]; !ok && (m.Src != "") {
+				if !ch.defines(m.Src) {
 					errors = append(errors, fmt.Sprintf("(%s) [channel.magic.%s] Source variable %s is not defined, did you forget [channel.var.%s]?",
-						ch.Prefix, name, m.Src, naked))
+						ch.Prefix, name, m.Src, m.Src.name))
 				} else {
+					srcVar := ch.Vars[m.Src.name]
 					if srcVar.Type.valid() {
 						sig := spell{srcVar.Type, m.Func}
 						if !hasMagic(sig) {
@@ -215,20 +236,12 @@ func (cfg config) check() (ok bool, errors []string) {
 				errors = append(errors, fmt.Sprintf("(%s) [channel.wire.%s.output] Invalid type: %s", ch.Prefix, name, string(w.Output.Type)))
 			}
 			if w.Output.hasRewrite() {
-				for n, v := range w.Output.Rewrite {
-					if len(v) == 0 {
-						errors = append(errors, fmt.Sprintf("(%s) [channel.wire.%s.output.rewrite] %s = blank!", ch.Prefix, name, n))
-						continue
-					}
-
-					// if not a literal
-					if v[0] != '\'' {
-						_, _, ok := checkVarName(v)
-						if !ok {
-							errors = append(errors, fmt.Sprintf("(%s) [channel.wire.%s.output.rewrite] %s = %s, invalid var: %s",
+				for n, v := range w.Output.rewrite {
+					if v.kind != LiteralString {
+						if !ch.defines(v) {
+							errors = append(errors, fmt.Sprintf("(%s) [channel.wire.%s.output.rewrite] %s = %s, no such var: %s",
 								ch.Prefix, name, n, v, v))
 						}
-						// TODO: check if the var is defined or not
 					}
 				}
 			}
@@ -239,25 +252,6 @@ func (cfg config) check() (ok bool, errors []string) {
 	return
 }
 
-func parseConfig(file string) (cfg config, ok bool) {
-	_, err := toml.DecodeFile(file, &cfg)
-	if err != nil {
-		panic(err)
-	}
-	cfg.prepare()
-
-	var errors []string
-	ok, errors = cfg.check()
-	if !ok {
-		fmt.Printf("ERROR: %d error(s) in %s:\n", len(errors), file)
-		for n, e := range errors {
-			fmt.Printf("#%d: %s\n", n+1, e)
-		}
-	}
-
-	return cfg, ok
-}
-
 func fixPath(path string) string {
 	if path[0] != '/' {
 		path = "/" + path
@@ -266,15 +260,4 @@ func fixPath(path string) string {
 		path = path[:len(path)-1]
 	}
 	return path
-}
-
-func checkVarName(v string) (sigil uint8, short string, ok bool) {
-	if len(v) < 2 {
-		return 0, "", false
-	}
-
-	sigil, short = v[0], v[1:]
-	ok = true
-
-	return
 }

@@ -10,92 +10,20 @@ import (
 var channelTable = make(map[string]*channel)
 var channelTableMutex = &sync.RWMutex{}
 
-type varKind int
-
-const (
-	ChannelVar varKind = iota
-	UserVar
-	MagicVar
-	SystemVar
-	BroadcastVar
-	WireVar
-
-	InvalidVar varKind = -1
-)
-
-var sigilTable = map[uint8]varKind{
-	'%': UserVar,
-	'&': MagicVar,
-	'$': SystemVar,
-	'#': BroadcastVar,
-	'=': WireVar,
-}
-
-type identifier struct {
-	sigil rune
-	name  string
-}
-
-type broadcast struct {
-	Type     jsType
-	ReadOnly bool
-}
-
-type wire struct {
-	inputType  jsType
-	outputType jsType
-	rewrite    bool
-	transform  func(*channel, wire, *client, interface{}) interface{}
-}
-
-type getter struct {
-	From *client
-	Var  string
-}
-
-type setter struct {
-	From      *client
-	Var       string
-	Value     interface{}
-	Overwrite map[string]interface{}
-}
-
-type order struct {
-	get getter
-	to  chan delivery
-}
-
-type delivery struct {
-	value interface{}
-	err   *errorMessage
-}
-
-type uservarMap map[*client]interface{}
-
-// wouldn't it be cool if json.Marshal used .String() so I didn't have to do this?
-func (m uservarMap) MarshalJSON() (b []byte, err error) {
-	idMap := make(map[string]interface{})
-	for c, v := range m {
-		idMap[string(c.id)] = v
-	}
-	b, err = json.Marshal(idMap)
-	return
-}
-
 type channel struct {
 	prefix     rune
 	name       string
 	restrict   []string
 	listeners  map[*client]bool
-	index      map[string]varKind
-	types      map[string]jsType
-	broadcasts map[string]broadcast
-	wires      map[string]wire
-	vars       map[string]interface{}
-	uservars   map[string]uservarMap
-	magic      map[string]func() interface{}
-	cache      map[string]interface{}
-	deps       map[string][]string
+	index      map[identifier]bool
+	types      map[identifier]jsType
+	broadcasts map[identifier]broadcast
+	wires      map[identifier]wire
+	vars       map[identifier]interface{}
+	uservars   map[identifier]uservarMap
+	magic      map[identifier]func() interface{}
+	cache      map[identifier]interface{}
+	deps       map[identifier][]identifier
 
 	get     chan getter
 	set     chan setter
@@ -113,15 +41,15 @@ func newChannel(name string) *channel {
 	ch := &channel{
 		name:       name,
 		listeners:  make(map[*client]bool),
-		index:      make(map[string]varKind),
-		types:      make(map[string]jsType),
-		broadcasts: make(map[string]broadcast),
-		wires:      make(map[string]wire),
-		vars:       make(map[string]interface{}),
-		uservars:   make(map[string]uservarMap),
-		magic:      make(map[string]func() interface{}),
-		cache:      make(map[string]interface{}),
-		deps:       make(map[string][]string),
+		index:      make(map[identifier]bool),
+		types:      make(map[identifier]jsType),
+		broadcasts: make(map[identifier]broadcast),
+		wires:      make(map[identifier]wire),
+		vars:       make(map[identifier]interface{}),
+		uservars:   make(map[identifier]uservarMap),
+		magic:      make(map[identifier]func() interface{}),
+		cache:      make(map[identifier]interface{}),
+		deps:       make(map[identifier][]identifier),
 
 		get:     make(chan getter),
 		set:     make(chan setter),
@@ -140,88 +68,69 @@ func (ch *channel) wall(msg interface{}) {
 	}
 }
 
-// notify when vars change (needs sigil in the name)
-func (ch *channel) notify(fullName string, value interface{}) {
+// notify when vars change
+func (ch *channel) notify(v identifier, value interface{}) {
 	ch.wall(setRequest{
 		Cmd:     "s",
 		Channel: ch.name,
-		Var:     fullName,
+		Var:     v,
 		Value:   value,
 	})
 }
 
 // re-computes magic values (no sigil needed)
-func (ch *channel) invalidate(varName string) {
-	if _, exists := ch.deps[varName]; exists {
-		for _, dep := range ch.deps[varName] {
+func (ch *channel) invalidate(v identifier) {
+	if _, exists := ch.deps[v]; exists {
+		for _, dep := range ch.deps[v] {
 			oldVal := ch.cache[dep]
 			newVal := ch.magic[dep]()
 			if oldVal != newVal {
 				ch.cache[dep] = newVal
-				ch.notify("&"+dep, newVal)
+				ch.notify(dep, newVal)
 			}
 		}
 	}
 }
 
-// returns the kind information and sigil-less name of a variable, or an error
-func (ch *channel) lookup(fullName string) (kind varKind, name string, err *errorMessage) {
-	// the shortest variable is 2 characters
-	if len(fullName) < 2 {
-		return InvalidVar, "", channelError(ch, fullName, "Variable name too short.")
-	}
-
-	var sigil uint8
-	var exists bool
-
-	sigil, name = fullName[0], fullName[1:]
-	kind, exists = ch.index[name]
-
-	if !exists {
-		log.Printf("[%s] unknown var: %s", ch.name, name)
-		err = channelError(ch, fullName, "No such variable")
-	} else {
-		if sigilTable[sigil] != kind {
-			log.Printf("[%s] mismatched sigil: %s for %v", ch.name, fullName, kind)
-			err = channelError(ch, fullName, "Mismatched sigil")
-		}
-	}
-
-	return
+func (ch *channel) has(v identifier) bool {
+	return ch.index[v]
 }
 
-// gets value of a var (needs sigil)
-func (ch *channel) value(fullName string, from *client) (val interface{}, err *errorMessage) {
-	var kind varKind
-	var name string
-	kind, name, err = ch.lookup(fullName)
+// gets value of a var or returns an error
+func (ch *channel) value(v identifier, from *client) (val interface{}, err *errorMessage) {
+	if !ch.has(v) {
+		return nil, channelError(ch, v, "no such var")
+	}
 
-	switch kind {
+	switch v.kind {
 	case UserVar:
-		// returns everyone's stuff if 'from' is missing
 		if from != nil {
-			val = ch.uservars[name][from]
+			val = ch.uservars[v][from]
 		} else {
-			val = ch.uservars[name]
+			val = "(nobody)"
 		}
 	case MagicVar:
-		val = ch.cache[name]
+		val = ch.cache[v]
 	case SystemVar:
-		val = ch.vars["$"+name]
+		val = ch.vars[v]
+	default:
+		err = channelError(ch, v, "unknown kind")
 	}
 
 	return
 }
 
 // gets all values from a collection (uservars)
-func (ch *channel) values(fullName string) (val map[*client]interface{}, err *errorMessage) {
-	var kind varKind
-	var name string
-	kind, name, err = ch.lookup(fullName)
+func (ch *channel) values(v identifier) (val map[*client]interface{}, err *errorMessage) {
+	if !ch.has(v) {
+		return nil, channelError(ch, v, "no such var")
+	}
 
-	switch kind {
+	switch v.kind {
 	case UserVar:
-		val = ch.uservars[name]
+		val = ch.uservars[v]
+	default:
+		err = channelError(ch, v, "unhandled kind for values()")
 	}
 
 	return
@@ -252,9 +161,9 @@ func (ch *channel) run() {
 
 			// $listeners
 			ct := len(ch.listeners)
-			ch.vars["$listeners"] = ct
-			if ch.index["listeners"] == SystemVar {
-				ch.notify("$listeners", ct)
+			if ch.has(listenersVar) {
+				ch.vars[listenersVar] = ct
+				ch.notify(listenersVar, ct)
 			}
 		case c := <-ch.part:
 			delete(ch.listeners, c)
@@ -269,9 +178,9 @@ func (ch *channel) run() {
 
 			// update $listeners
 			ct := len(ch.listeners)
-			ch.vars["$listeners"] = ct
-			if ch.index["listeners"] == SystemVar {
-				ch.notify("$listeners", ct)
+			if ch.has(listenersVar) {
+				ch.vars[listenersVar] = ct
+				ch.notify(listenersVar, ct)
 			}
 
 			// die?
@@ -296,38 +205,43 @@ func (ch *channel) run() {
 			getr.From.send(msg)
 		case o := <-ch.deliver:
 			val, err := ch.value(o.get.Var, o.get.From)
-			d := delivery{
+			d := goods{
 				value: val,
 				err:   err,
 			}
 			o.to <- d
 		case setr := <-ch.set:
-			kind, name, err := ch.lookup(setr.Var)
-			if err != nil {
+			v := setr.Var
+			if !ch.has(v) {
 				if setr.From != nil {
+					err := channelError(ch, v, "no such var")
 					err.ReplyTo = "s"
 					setr.From.send(err)
 				}
+				continue
 			}
-			switch kind {
+
+			switch v.kind {
 			case UserVar:
 				// did we get good data?
-				type_ := ch.types[name]
+				type_ := ch.types[v]
 				if type_.is(setr.Value) {
-					ch.uservars[name][setr.From] = setr.Value
-					ch.invalidate(name)
+					ch.uservars[v][setr.From] = setr.Value
+					ch.invalidate(v)
 				} else {
-					err := channelError(ch, setr.Var, "Invalid data: wrong type")
-					err.ReplyTo = "s"
-					setr.From.send(err)
+					if setr.From != nil {
+						err := channelError(ch, v, "invalid data: wrong type")
+						err.ReplyTo = "s"
+						setr.From.send(err)
+					}
 				}
 			case ChannelVar:
 				// TODO
 			case BroadcastVar:
-				b := ch.broadcasts[name]
+				b := ch.broadcasts[v]
 				if setr.From != nil {
 					// TODO: possibly let clients send to broadcasts too?
-					err := channelError(ch, setr.Var, "You can't send to this")
+					err := channelError(ch, v, "You can't send to this")
 					err.ReplyTo = "s"
 					setr.From.send(err)
 				} else {
@@ -338,7 +252,7 @@ func (ch *channel) run() {
 					}
 				}
 			case WireVar:
-				w := ch.wires[name]
+				w := ch.wires[v]
 				msg := setr.Value
 				if w.rewrite {
 					msg = w.transform(ch, w, setr.From, setr.Value)
@@ -349,10 +263,56 @@ func (ch *channel) run() {
 						m[k] = v
 					}
 				}
-				ch.notify(setr.Var, msg)
+				ch.notify(v, msg)
 			}
 		}
 	}
+}
+
+type broadcast struct {
+	Type     jsType
+	ReadOnly bool
+}
+
+type wire struct {
+	inputType  jsType
+	outputType jsType
+	rewrite    bool
+	transform  func(*channel, wire, *client, interface{}) interface{}
+}
+
+type getter struct {
+	From *client
+	Var  identifier
+}
+
+type setter struct {
+	From      *client
+	Var       identifier
+	Value     interface{}
+	Overwrite map[string]interface{}
+}
+
+type order struct {
+	get getter
+	to  chan<- goods
+}
+
+type goods struct {
+	value interface{}
+	err   *errorMessage
+}
+
+type uservarMap map[*client]interface{}
+
+// wouldn't it be cool if json.Marshal used .String() so I didn't have to do this?
+func (m uservarMap) MarshalJSON() (b []byte, err error) {
+	idMap := make(map[string]interface{})
+	for c, v := range m {
+		idMap[string(c.id)] = v
+	}
+	b, err = json.Marshal(idMap)
+	return
 }
 
 func registerChannel(ch *channel) {
@@ -399,14 +359,10 @@ func getChannel(name string) *channel {
 	return ch
 }
 
-func channelError(ch *channel, varName, msg string) *errorMessage {
+func channelError(ch *channel, v identifier, msg string) *errorMessage {
 	return &errorMessage{
 		Message: msg,
 		Channel: ch.name,
-		Var:     varName,
+		Var:     v,
 	}
-}
-
-func checkSigil(sigil uint8, kind varKind) bool {
-	return sigilTable[sigil] == kind
 }

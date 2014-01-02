@@ -8,7 +8,7 @@ path = "/ws"
 
 [static] # static file server
 enabled = true
-index = "test.html"
+index = "examples/test.html"
 dirs = ["js"]
 
 [api]
