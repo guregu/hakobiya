@@ -4,7 +4,7 @@ import "unicode/utf8"
 
 type channelTemplate struct {
 	Prefix    string
-	Expose    []string // special $vars to expose
+	Expose    []identifier // special $vars to expose
 	Restrict  []string
 	Vars      map[string]*varDef `toml:"var"`
 	Magic     map[string]*magicDef
@@ -18,23 +18,9 @@ func (tmpl channelTemplate) apply(ch *channel) {
 	ch.prefix = prefix
 	// restrict
 	ch.restrict = tmpl.Restrict
-	// broadcasts
-	for name, broadcastCfg := range tmpl.Broadcast {
-		v := identifier{
-			sigil: '#',
-			name:  name,
-			kind:  BroadcastVar,
-		}
-		ch.index[v] = true
-		ch.broadcasts[v] = *broadcastCfg
-	}
 	// expose
-	for _, b := range tmpl.Expose {
-		// TODO there is a bug in the TOML library
-		// that prevents arrays of indentifier, fix it
-		v := identifier{}
-		v.UnmarshalText([]byte(b))
-		ch.index[v] = true
+	for _, v := range tmpl.Expose {
+		ch.index[v] = false // system vars are read-only
 		switch v {
 		case listenersVar:
 			ch.vars[listenersVar] = 0
@@ -49,10 +35,9 @@ func (tmpl channelTemplate) apply(ch *channel) {
 			name:  name,
 			kind:  UserVar,
 		}
-		ch.index[v] = true
+		ch.index[v] = !def.ReadOnly
 		ch.uservars[v] = make(map[*client]interface{})
 		ch.types[v] = def.Type
-		// TODO set read only
 	}
 	// TODO: channel vars?
 	// magic
@@ -62,7 +47,7 @@ func (tmpl channelTemplate) apply(ch *channel) {
 			name:  name,
 			kind:  MagicVar,
 		}
-		ch.index[v] = true
+		ch.index[v] = false // all magic is read-only
 		srcVar := tmpl.Vars[m.Src.name]
 		s := spell{srcVar.Type, m.Func}
 		ch.magic[v] = makeMagic(ch, m.Src, s, m.Params)
@@ -71,29 +56,22 @@ func (tmpl channelTemplate) apply(ch *channel) {
 		ch.cache[v] = defaultValue(s)
 	}
 	// wires
-	// TODO: some kind of generic function chain thingy to make the logic here more sane
-	for name, wireCfg := range tmpl.Wire {
+	// TODO: some kind of generic function chain thingy
+	for name, def := range tmpl.Wire {
 		v := identifier{
 			sigil: '=',
 			name:  name,
 			kind:  WireVar,
 		}
-		ch.index[v] = true
+		ch.index[v] = !def.ReadOnly
 		w := wire{} // our baby wire
-		if wireCfg.Input == nil {
-			panic("no input definition for wire: " + name)
-		} else {
-			w.inputType = wireCfg.Input.Type
-		}
-		if wireCfg.Output == nil {
-			w.outputType = w.inputType
-		} else {
-			w.outputType = wireCfg.Output.Type
-			if wireCfg.Output.hasRewrite() {
-				w.rewrite = true
-				w.transform = func(ch *channel, _wire wire, from *client, input interface{}) interface{} {
-					return wireCfg.Output.rewrite.transform(ch, from, input)
-				}
+		w.inputType = def.Type
+		w.outputType = def.Type
+		if def.hasRewrite() {
+			w.rewrite = true
+			w.outputType = jsObject
+			w.transform = func(ch *channel, _wire wire, from *client, input interface{}) interface{} {
+				return def.Rewrite.transform(ch, from, input)
 			}
 		}
 		ch.wires[v] = w
@@ -129,23 +107,15 @@ type magicDef struct {
 	Params map[string]interface{}
 }
 
+// there's a TOML parsing bug workaround here, see config.go
 type wireDef struct {
-	Input  *wireDefInput
-	Output *wireDefOutput
-}
-
-type wireDefInput struct {
-	Type jsType
-	Trim int
-}
-
-type wireDefOutput struct {
 	Type           jsType
-	RewriteStrings map[string]string `toml:"rewrite"` // TOML bug
-	rewrite        rewriteDef        // TODO FIXME
+	RewriteStrings map[string]string `toml:"rewrite"`
+	Rewrite        rewriteDef        `toml:"-"`
+	ReadOnly       bool
 }
 
-func (w wireDefOutput) hasRewrite() bool {
+func (w wireDef) hasRewrite() bool {
 	return len(w.RewriteStrings) > 0
 }
 

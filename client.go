@@ -174,6 +174,10 @@ func (c *client) partAll() {
 	c.listening = make(map[string]*channel)
 }
 
+func (c *client) MarshalText() (text []byte, err error) {
+	return []byte(c.id), nil
+}
+
 func addClient(c *client) {
 	clientsTableLock.Lock()
 	defer clientsTableLock.Unlock()

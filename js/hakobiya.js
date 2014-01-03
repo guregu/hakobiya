@@ -29,7 +29,6 @@ hakobiyaModule.factory('Hakobiya', function($rootScope) {
 			};
 			this.socket.onmessage = function(evt) {
 				var data = angular.fromJson(evt.data);
-				console.log(evt.data);
 				switch (data.x) {
 					case 's': //set
 						var id = data.c + "." + data.n;
@@ -47,7 +46,13 @@ hakobiyaModule.factory('Hakobiya', function($rootScope) {
 						$rootScope.$broadcast(joinEvt, true); 
 						break;
 					case '!': //error
-						console.log("error (" + data.w + "): " + data.m);
+						var v = "";
+						if (data.c && data.n) {
+							v = "[" + data.c + "." + data.n + "]"
+						} else if (data.c) {
+							v = "[" + data.c + "]"
+						}
+						console.log("error (" + data.w + "): " + v + " " + data.m);
 						break;
 				}
 			};

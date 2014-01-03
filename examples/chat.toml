@@ -1,0 +1,46 @@
+#######################
+# Hakobiya Server Config
+#######################
+[server]
+name = "Chat Server"
+bind = ":8080"
+path = "/ws"
+
+[static] # static file server
+enabled = true
+index = "examples/chat.html"
+dirs = ["js"]
+
+[api]
+enabled = true
+path = "/api"
+key = "123"
+#allowedIPs = ["127.0.0.1"]
+
+#######################
+# 話: Chat room
+#######################
+[[channel]]
+prefix = "話"
+expose = ["$listeners"]
+[channel.var.name]
+	type = "string"
+	default = "Guest-%d"
+[channel.magic.same_name]
+	src = "%name"
+	func = "same"
+[channel.magic.has_bob]
+	src = "%name"
+	func = "any"
+	[channel.magic.has_bob.params]
+		value = "Bob"
+[channel.magic.guest_pct]
+	src = "%name"
+	func = "percent"
+	param = "Guest"
+[channel.wire.chat]
+	readonly = false
+	[channel.wire.chat.rewrite]
+		name = "%name" #c.%name
+		msg = "$input"
+		test = "'literal"

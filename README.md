@@ -3,9 +3,9 @@ The real-time helper. Remote data binding for Angular.js using Websockets.
 
 Do you have an old app using AJAX for 'soft' real time and need a really real-time bridge? Do you have an app that just needs to push around some data from client to client and you don't want to write a whole new server? Hakobiya could be the answer.
 
-A Hakobiya server has one or more **channel** templates. Channels have names, and the type of channel is specified by the first letter of the name. You can configure each type of channel to store **variables** (data for each user), computed values of user variables (**magic variables**), server to client communication slots called **broadcasts**, and client to client communication slots called **wires**. Additionally, you can chose to expose **system variables** to clients, such as the number of clients listening in a particular channel. You can then bind any of these values to Javascript variables and everything will be automatically synchronized.
+A Hakobiya server has one or more **channel** templates. Channels have names, and the type of channel is specified by the first letter of the name. You can configure each type of channel to store **variables** (data for each user), computed values of user variables (**magic variables**), and client to client communication slots called **wires**. Additionally, you can chose to expose **system variables** to clients, such as the number of clients listening in a particular channel. You can then bind any of these values to Javascript variables and everything will be automatically synchronized.
 
-Hakobiya has an HTTP API that lets you send broadcasts to any channel, so you can have something else handle the logic and let Hakobiya take care of updating your users.
+Hakobiya has an HTTP API that lets you set values and send messages in any channel, so you can have something else handle the logic and let Hakobiya take care of updating your users.
 
 # Configuration 
 The default config file is `config.toml`. You can specify a different file with the `-config` flag:
@@ -30,7 +30,7 @@ General server configuration.
 
 | Name | Type   | Required?    | Default       | Description                 |
 | ---- | ------ | ------------ | ------------- | --------------------------- |
-| name | string | **required** |               | Server name                 |
+| name | string | *optional*   | `"Hakobiya"`  | Server name                 |
 | bind | string | *optional*   | `":8080"`     | Bind address: `[host]:port` |
 | path | string | *optional*   | `"/hakobiya"` | Path for Websocket server   |
 
@@ -46,7 +46,7 @@ path = "/chat"
 ## API config
 `[api]` 
 
-The API lets you send broadcasts.
+The API lets you send messages to clients and set and get values via HTTP.
 
 | Name    | Type   | Required?  | Default  | Description                 |
 | ------- | ------ | ---------- | -------- | --------------------------- |
@@ -85,10 +85,10 @@ expose = ["$listeners"]
 
 Defines a per-user value. You can use these values when computing magic variables.
 
-| Name        | Type | Required?  | Default | Description                      |
-| ----------- | ---- | ---------- | ------- | -------------------------------- |
-| type        | type | *optional* | `"any"` | The type of this variable        |
-| ~~default~~ | *    | *optional* |         | Default value for this variable  |
+| Name        | Type | Required?  | Default   | Description                      |
+| ----------- | ---- | ---------- | --------- | -------------------------------- |
+| type        | type | *optional* | `"any"`   | The type of this variable        |
+| ~~default~~ | *    | *optional* |           | Default value for this variable  |
 
 #### Example
 Defines a string user variable called `%username`, and a boolean variable called `%typing`.
@@ -117,45 +117,18 @@ Defines a magic variable called `&typers` that counts the number of users who ha
 	func = "count"
 ```
 
-
-### Broadcasts (#var)
-`[channel.broadcast.(variable name)]`
-
-Broadcasts allow the server (via the HTTP API) to send messages to all clients in a particular channel. 
-
-| Name | Type | Required?  | Default | Description                             |
-| ---- | ---- | ---------- | ------- | --------------------------------------- |
-| type | type | *optional* | `"any"` | Type of var for the broadcast to expect |
-
-#### Example
-```toml
-[channel.broadcast.alerts]
-    type = "string"
-```
-
 ### Wire (=var)
 `[channel.wire.(variable name)]`
 
-Wires let clients send and receive messages to all other clients on the channel. You can optionally specify rules to rewrite incoming messages, combining them with other variables or literal text.
+Wires let clients send and receive messages to all other clients on the channel. You can optionally specify rules to rewrite incoming messages, combining them with other variables or literal text. You can make a wire read-only, which prevents clients from sending messages to it but allows you to send messages via the HTTP API.
 
-A wire's input and output is defined separately. The input definition is **required**, but the output definition is *optional* and omitting it will broadcast the input as-is.
+| Name        | Type | Required?  | Default   | Description                                         |
+| ----------- | ---- | ---------- | --------- | --------------------------------------------------- |
+| type        | type | *optional* | `"any"`   | Input type  										|
+| readonly    | bool | *optional* | `"false"` | If set to true, only the HTTP API can send messages |
 
-#### Wire input (**required**)
-`[channel.wire.(variable name).input]`
-
-| Name | Type | Required?    | Default | Description           |
-| ---- | ---- | ------------ | ------- | --------------------- |
-| type | type | *optional*   | `"any"` | The type of the input |
-
-#### Wire output (*optional*)
-`[channel.wire.(variable name).output]`
-
-| Name | Type | Required?    | Default               | Description                                      |
-| ---- | ---- | ------------ | --------------------- | ------------------------------------------------ |
-| type | type | *optional*   | `"any"` or `"object"` | Output type, `"object"` when using rewrite rules |
-
-#### Wire output rewrite rules (*optional*)
-`[channel.wire.(variable name).output.rewrite]`
+#### Wire rewrite rules 
+`[channel.wire.(variable name).rewrite]`
 
 A table used for compositing input and other variables or literal text. The keys are the names for the new JSON object fields, the values are variable names (with sigil) to substitute (such as `"%name"`), `"$input"` to specify the input, or text literals with a leading single quote (like `"'hello"`).
 
@@ -163,12 +136,10 @@ A table used for compositing input and other variables or literal text. The keys
 Defines a wire called `=chat` that takes a string as input and rewrites it as an object containing the input and the username of the sender.
 ```toml
 [channel.wire.chat] 
-	[channel.wire.chat.input]
-		type = "string"
-	[channel.wire.chat.output]
-		[channel.wire.chat.output.rewrite]
-			sender = "%username" 
-			msg = "$input"
+	type = "string"
+	[channel.wire.chat.rewrite]
+		sender = "%username" 
+		msg = "$input"
 ```
 A client could send a message like `"hello world"` to the wire, which would then send a JSON object like this to all clients on the channel:
 ```json
@@ -214,6 +185,4 @@ myModule.run(function (Hakobiya) {
 ```
 
 # HTTP API
-You can choose to expose an HTTP API, letting you send broadcasts to clients.
-
-Proper documentation coming soon!
+You can choose to expose an HTTP API, docs soon.

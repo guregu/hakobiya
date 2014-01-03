@@ -39,6 +39,10 @@ type identifier struct {
 	kind  varKind
 }
 
+func (id *identifier) MarshalText() (text []byte, err error) {
+	return []byte(id.String()), nil
+}
+
 func (id *identifier) UnmarshalText(text []byte) error {
 	if len(text) < 2 {
 		return Error("", "invalid var: too short")

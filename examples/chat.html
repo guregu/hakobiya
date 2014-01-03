@@ -28,24 +28,6 @@
 					"guestPct": "&guest_pct"
 				});
 			}
-
-			function TestCtrl($scope, Hakobiya) {
-				$scope.channel = "Q121";
-				$scope.typers = 0;
-				$scope.typing = false;
-				$scope.users = 0;
-				$scope.atleastonetyper = null;
-				$scope.messages = [];
-
-				Hakobiya.bind($scope, "channel",
-				{
-					"typers": "&typers",
-					"typing": "%typing",
-					"users": "$listeners",
-					"atleastonetyper": "&is_someone_typing",
-					"messages": "#answer"
-				});
-			}
 		</script>
 	</head>
 	<body>
@@ -60,15 +42,6 @@
 			</ol>
 			<input type="text" ng-model="name"> <input type="text" ng-model="input" placeholder="Type stuff">
 			<button ng-click="chat.send(input); input = ''">Send</button>
-		</div>
-		<hr>
-		<div ng-controller="TestCtrl">
-			{{users}} users <br />
-			{{typers}} typers <br />
-			{{atleastonetyper}} <br />
-			<button ng-click="typing = !typing">Clicky</button>
-			<hr>
-			{{messages}}
 		</div>
 	</body>
 </html>

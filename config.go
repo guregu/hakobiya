@@ -96,20 +96,16 @@ func (cfg *config) prepare() {
 		}
 		// [channel.wire.*]
 		for _, w := range ch.Wire {
-			w.Input.Type = w.Input.Type.rescue()
-			if w.Output.hasRewrite() {
-				// TODO: warn the user if they have it set to something other than 'object'?
-				w.Output.Type = jsObject
-
+			w.Type = w.Type.rescue()
+			if w.hasRewrite() {
 				// TOML bug hack
-				w.Output.rewrite = make(rewriteDef)
-				for n, str := range w.Output.RewriteStrings {
+				// it can't handle map[string]identifier so we have to do this
+				w.Rewrite = make(rewriteDef)
+				for n, str := range w.RewriteStrings {
 					v := identifier{}
 					v.UnmarshalText([]byte(str))
-					w.Output.rewrite[n] = v
+					w.Rewrite[n] = v
 				}
-			} else {
-				w.Output.Type = w.Output.Type.rescue()
 			}
 		}
 		// [channel.magic.*]
@@ -177,10 +173,7 @@ func (cfg config) check() (ok bool, errors []string) {
 			}
 		}
 		// expose
-		for _, b := range ch.Expose {
-			// TODO: TOML bug fix
-			v := identifier{}
-			v.UnmarshalText([]byte(b))
+		for _, v := range ch.Expose {
 			if v.kind != SystemVar {
 				errors = append(errors, fmt.Sprintf("(%s) [channel.expose] Not a system variable: %s", ch.Prefix, v))
 			}
@@ -218,34 +211,19 @@ func (cfg config) check() (ok bool, errors []string) {
 		}
 		// wire check
 		for name, w := range ch.Wire {
-			// input stuff
-			// TODO: in the future, type conversion etc
-			if w.Input == nil {
-				errors = append(errors, fmt.Sprintf("(%s) [channel.wire.%s.input] Missing!", ch.Prefix, name))
-				continue
+			if !w.Type.valid() {
+				errors = append(errors, fmt.Sprintf("(%s) [channel.wire.%s.input] Invalid type: %s", ch.Prefix, name, string(w.Type)))
 			}
-			if !w.Input.Type.valid() {
-				errors = append(errors, fmt.Sprintf("(%s) [channel.wire.%s.input] Invalid type: %s", ch.Prefix, name, string(w.Input.Type)))
-			}
-			if w.Output == nil {
-				continue
-			}
-
-			// output stuff
-			if !w.Output.Type.valid() {
-				errors = append(errors, fmt.Sprintf("(%s) [channel.wire.%s.output] Invalid type: %s", ch.Prefix, name, string(w.Output.Type)))
-			}
-			if w.Output.hasRewrite() {
-				for n, v := range w.Output.rewrite {
-					if v.kind != LiteralString {
-						if !ch.defines(v) {
-							errors = append(errors, fmt.Sprintf("(%s) [channel.wire.%s.output.rewrite] %s = %s, no such var: %s",
-								ch.Prefix, name, n, v, v))
-						}
+			if w.hasRewrite() {
+				for n, v := range w.Rewrite {
+					if v.kind != LiteralString && !ch.defines(v) {
+						errors = append(errors, fmt.Sprintf("(%s) [channel.wire.%s.output.rewrite] %s = %s, no such var: %s",
+							ch.Prefix, name, n, v, v))
 					}
 				}
 			}
 		}
+		// done
 	}
 
 	ok = len(errors) == 0

@@ -63,7 +63,7 @@ func apiSet(w http.ResponseWriter, r *http.Request) {
 		//TODO: From
 	}
 	ch.set <- msg
-	routes.ServeJson(w, apiResponse{API_OK, "set " + req.Var.String(), req.Value})
+	routes.ServeJson(w, apiResponse{API_OK, "", req.Var.String()})
 }
 
 func apiFetch(w http.ResponseWriter, r *http.Request) {
@@ -95,7 +95,7 @@ func apiFetch(w http.ResponseWriter, r *http.Request) {
 		ch.deliver <- fetch
 		g := <-mailbox
 		if g.err == nil {
-			routes.ServeJson(w, apiResponse{API_OK, "got " + req.Var.String(), g.value})
+			routes.ServeJson(w, apiResponse{API_OK, "", g.value})
 		} else {
 			routes.ServeJson(w, apiResponse{API_Error, "couldn't get", g.err})
 		}

@@ -33,7 +33,7 @@ func main() {
 	}
 
 	// start http services
-	log.Printf("Starting Hakobiya %s @ %s%s", cfg.Server.Name, cfg.Server.Bind, cfg.Server.Path)
+	log.Printf("Hakobiya: Starting %s @ %s%s", cfg.Server.Name, cfg.Server.Bind, cfg.Server.Path)
 	log.Printf("Channels (%d): %s", len(templates), channelBanner)
 	http.Handle(cfg.Server.Path, websocket.Handler(serveWS))
 	// api
@@ -73,7 +73,6 @@ func index(w http.ResponseWriter, r *http.Request) {
 
 func serveWS(ws *websocket.Conn) {
 	c := newClient(ws)
-	log.Printf("new buddy: %v", c.id)
 	go c.writer()
 	c.run()
 }
