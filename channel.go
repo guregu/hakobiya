@@ -60,7 +60,7 @@ func newChannel(name string) *channel {
 }
 
 // write all
-func (ch *channel) wall(msg interface{}) {
+func (ch *channel) broadcast(msg interface{}) {
 	for c, _ := range ch.listeners {
 		c.send(msg)
 	}
@@ -68,7 +68,7 @@ func (ch *channel) wall(msg interface{}) {
 
 // notify when vars change
 func (ch *channel) notify(v identifier, value interface{}) {
-	ch.wall(setRequest{
+	ch.broadcast(setRequest{
 		Cmd:     "s",
 		Channel: ch.name,
 		Var:     v,
@@ -238,7 +238,7 @@ func (ch *channel) run() {
 					ch.invalidate(v)
 				} else {
 					if setr.From != nil {
-						err := channelError(ch, v, "invalid data: wrong type")
+						err := channelError(ch, v, "wrong type")
 						err.ReplyTo = "s"
 						setr.From.send(err)
 					}

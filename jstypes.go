@@ -13,9 +13,9 @@ const (
 	jsStringArray   jsType = "string[]"
 	jsObject        jsType = "object"
 	jsObjectArray   jsType = "object[]"
-	jsAnything      jsType = "any"
+	jsAnything      jsType = ""
 	jsAnythingArray jsType = "any[]"
-	jsNone          jsType = ""
+	jsNone          jsType = "(none)"
 )
 
 func (me jsType) valid() bool {
@@ -34,25 +34,17 @@ func (me jsType) valid() bool {
 func (me jsType) is(v interface{}) bool {
 	switch me {
 	case jsBool:
-		switch v.(type) {
-		case bool:
-			return true
-		}
+		_, ok := v.(bool)
+		return ok
 	case jsBoolArray:
-		switch v.(type) {
-		case []bool:
-			return true
-		}
+		_, ok := v.([]bool)
+		return ok
 	case jsInt:
-		switch v.(type) {
-		case int:
-			return true
-		}
+		_, ok := v.(int)
+		return ok
 	case jsIntArray:
-		switch v.(type) {
-		case []int:
-			return true
-		}
+		_, ok := v.([]int)
+		return ok
 	case jsFloat:
 		switch v.(type) {
 		case float32, float64:
@@ -64,25 +56,16 @@ func (me jsType) is(v interface{}) bool {
 			return true
 		}
 	case jsString:
-		switch v.(type) {
-		case string:
-			return true
-		}
+		_, ok := v.(string)
+		return ok
 	case jsStringArray:
-		switch v.(type) {
-		case []string:
-			return true
-		}
+		_, ok := v.([]string)
+		return ok
 	case jsAnythingArray:
-		switch v.(type) {
-		case []interface{}:
-			return true
-		}
+		_, ok := v.([]interface{})
+		return ok
 	case jsAnything:
-		switch v.(type) {
-		case interface{}:
-			return true
-		}
+		return true
 	default:
 		panic(".is(): unknown jsType! " + me)
 	}
@@ -127,9 +110,22 @@ func (me jsType) any() jsType {
 	}
 }
 
-func (me jsType) rescue() jsType {
-	if me == jsNone {
-		return jsAnything
+func (me jsType) MarshalText() (text []byte, err error) {
+	return []byte(me), nil
+}
+
+func (me *jsType) UnmarshalText(text []byte) error {
+	// since jsAnything is "", this lets people manually specify "any" if they really want
+	// unset jsType variables will be jsAnything by default
+	if string(text) == "any" {
+		*me = jsAnything
+	} else {
+		*me = jsType(text)
 	}
-	return me
+	// TODO: return error if invalid?
+	return nil
+}
+
+func (me jsType) String() string {
+	return string(me)
 }

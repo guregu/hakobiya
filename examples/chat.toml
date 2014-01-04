@@ -24,7 +24,6 @@ key = "123"
 prefix = "話"
 expose = ["$listeners"]
 [channel.var.name]
-	type = "string"
 	default = "Guest-%d"
 [channel.magic.same_name]
 	src = "%name"

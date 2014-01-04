@@ -85,18 +85,8 @@ func (cfg *config) prepare() {
 
 	// [[channel]]
 	for _, ch := range cfg.Channels {
-		// [channel.var.*]
-		for _, v := range ch.Vars {
-			// sets type to 'any' if none
-			v.Type = v.Type.rescue()
-		}
-		// [channel.broadcast.*]
-		for _, b := range ch.Broadcast {
-			b.Type = b.Type.rescue()
-		}
 		// [channel.wire.*]
 		for _, w := range ch.Wire {
-			w.Type = w.Type.rescue()
 			if w.hasRewrite() {
 				// TOML bug hack
 				// it can't handle map[string]identifier so we have to do this
@@ -181,13 +171,13 @@ func (cfg config) check() (ok bool, errors []string) {
 		// broadcast check
 		for name, b := range ch.Broadcast {
 			if !b.Type.valid() {
-				errors = append(errors, fmt.Sprintf("(%s) [channel.broadcast.%s] Invalid type: %s", ch.Prefix, name, string(b.Type)))
+				errors = append(errors, fmt.Sprintf("(%s) [channel.broadcast.%s] Invalid type: %s", ch.Prefix, name, b.Type))
 			}
 		}
 		// uservar check
 		for name, v := range ch.Vars {
 			if !v.Type.valid() {
-				errors = append(errors, fmt.Sprintf("(%s) [channel.var.%s] Invalid type: %s", ch.Prefix, name, string(v.Type)))
+				errors = append(errors, fmt.Sprintf("(%s) [channel.var.%s] Invalid type: %s", ch.Prefix, name, v.Type))
 			}
 		}
 		// magic check
