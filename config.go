@@ -46,7 +46,8 @@ var defaultAPIConfig = apiConfig{
 func parseConfig(file string) (cfg config, ok bool) {
 	_, err := toml.DecodeFile(file, &cfg)
 	if err != nil {
-		panic(err)
+		fmt.Printf("ERROR: %s\n", err.Error())
+		return config{}, false
 	}
 	cfg.prepare()
 

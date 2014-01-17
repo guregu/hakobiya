@@ -22,8 +22,8 @@ func (tmpl channelTemplate) apply(ch *channel) {
 	for _, v := range tmpl.Expose {
 		ch.index[v] = false // system vars are read-only
 		switch v {
-		case listenersVar:
-			ch.vars[listenersVar] = 0
+		case listenersSysVar:
+			ch.vars[listenersSysVar] = 0
 		default:
 			panic("Unknown system var in expose: " + v.String())
 		}

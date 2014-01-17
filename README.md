@@ -14,14 +14,14 @@ hakobiya -config /some/dir/hakobiya.toml
 ```
 
 #### Types
-Variable definitions often require a **type**, which can be any of the following:
+Variable definitions can take a **type**, which may be any of the following:
 
 * `"bool"`
 * `"int"`
 * `"float"`
 * `"string"`
 * `"object"`
-* `"any"`
+* `"any"` (or blank)
 
 ## Server config
 ``[server]`` 
@@ -167,7 +167,7 @@ function ChatCtrl($scope, Hakobiya) {
 }
 ```
 
-**User variables** have two-way binding. **System variables** have one-way binding. **Broadcasts** have one-way binding and are represented as an array. **Wires** are a special array: they have a `.send()` method to send data. 
+**User variables** have two-way binding. **System variables** have one-way binding. **Wires** are a special array: they have a `.send()` method to send data. 
 
 You can manually listen for changes to any of these variables like so:
 ```javascript
@@ -185,4 +185,45 @@ myModule.run(function (Hakobiya) {
 ```
 
 # HTTP API
-You can choose to expose an HTTP API, docs soon.
+All API methods are `POST` only for now.
+
+## Keys
+You can set a secret key in API section of the config file. You must then send this key to every request. You can add it to the JSON of your request as `"key":"abc"` or in the URL like `?key=abc`.
+
+## Get
+`/api/(channel name)/get`
+
+Expects JSON like:
+```javascript
+{
+    "var": "%name", // the variable you want
+    "for": "_AsbxHShw", // optional, some connection's user ID
+    "key": "123" // optional, you can put it in the URL or disable it
+}
+```
+
+## Set
+`/api/(channel name)/set`
+
+Expects JSON like:
+```javascript
+{
+    "var": "=chat", // desired variable
+    "value": "Hello from the API!", // desired value, here a string but it could be anything
+    // this next bit is all optional, and useful for wires with rewrites
+    // it lets you overwrite any parts of your potentially transformed message
+    // and let's you "spoof" values that would otherwise be taken from users
+    // or add extra server info from the server
+    "overwrite": {
+        "name": "SERVER"
+    }
+}
+```
+
+## Response
+```javascript
+{
+	"code": 1 // reponse code: 1 = OK, 0 = nothing happened, -1 = error
+	"msg": "something happened", // error message, etc
+	"value": "..." // value you requested or other pertitent data
+}

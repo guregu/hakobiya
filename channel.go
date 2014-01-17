@@ -76,6 +76,16 @@ func (ch *channel) notify(v identifier, value interface{}) {
 	})
 }
 
+// notify when vars change (one user)
+func (ch *channel) notifyOne(c *client, v identifier, value interface{}) {
+	c.send(setRequest{
+		Cmd:     "s",
+		Channel: ch.name,
+		Var:     v,
+		Value:   value,
+	})
+}
+
 // re-computes magic values (no sigil needed)
 func (ch *channel) invalidate(v identifier) {
 	if _, exists := ch.deps[v]; exists {
@@ -92,6 +102,11 @@ func (ch *channel) invalidate(v identifier) {
 
 func (ch *channel) has(v identifier) bool {
 	_, exists := ch.index[v]
+	return exists
+}
+
+func (ch *channel) hasUser(c *client) bool {
+	_, exists := ch.listeners[c]
 	return exists
 }
 
@@ -135,6 +150,68 @@ func (ch *channel) values(v identifier) (val map[*client]interface{}, err *error
 	return
 }
 
+func (ch *channel) setVar(from, to *client, v identifier, value interface{}, overwrite map[string]interface{}) *errorMessage {
+	canWrite, hasVar := ch.index[v]
+
+	if !hasVar {
+		err := channelError(ch, v, "no such var")
+		return err
+	}
+	// TODO: only check this for uservars
+	if to != nil && !ch.hasUser(to) {
+		err := channelError(ch, v, "no such user here")
+		return err
+	}
+	if from != nil {
+		// later we might want to let users set other users's variables
+		// but not now
+		// also, don't let clients set read-only vars
+		if to != from || !canWrite {
+			err := channelError(ch, v, "can't set that")
+			return err
+		}
+	}
+
+	switch v.kind {
+	case UserVar:
+		// did we get good data?
+		type_ := ch.types[v]
+		if type_.is(value) {
+			ch.uservars[v][to] = value
+			if to != from {
+				ch.notifyOne(to, v, value)
+			}
+			ch.invalidate(v)
+		} else {
+			if from != nil {
+				err := channelError(ch, v, "wrong type")
+				return err
+			}
+		}
+	case ChannelVar:
+		// TODO
+	case WireVar:
+		w := ch.wires[v]
+		if !w.inputType.is(value) {
+			err := channelError(ch, v, "wrong type")
+			return err
+		}
+		msg := value
+		if w.rewrite {
+			msg = w.transform(ch, w, to, msg)
+		}
+		if overwrite != nil {
+			if m, ok := msg.(map[string]interface{}); ok {
+				for k, v := range overwrite {
+					m[k] = v
+				}
+			}
+		}
+		ch.notify(v, msg)
+	}
+	return nil
+}
+
 func (ch *channel) run() {
 	log.Printf("Running channel: %s", ch.name)
 	defer unregisterChannel(ch)
@@ -160,9 +237,9 @@ func (ch *channel) run() {
 
 			// $listeners
 			ct := len(ch.listeners)
-			if ch.has(listenersVar) {
-				ch.vars[listenersVar] = ct
-				ch.notify(listenersVar, ct)
+			if ch.has(listenersSysVar) {
+				ch.vars[listenersSysVar] = ct
+				ch.notify(listenersSysVar, ct)
 			}
 		case c := <-ch.part:
 			delete(ch.listeners, c)
@@ -177,9 +254,9 @@ func (ch *channel) run() {
 
 			// update $listeners
 			ct := len(ch.listeners)
-			if ch.has(listenersVar) {
-				ch.vars[listenersVar] = ct
-				ch.notify(listenersVar, ct)
+			if ch.has(listenersSysVar) {
+				ch.vars[listenersSysVar] = ct
+				ch.notify(listenersSysVar, ct)
 			}
 
 			// die?
@@ -187,86 +264,44 @@ func (ch *channel) run() {
 				log.Printf("Dying: %s", ch.name)
 				return
 			}
-		case getr := <-ch.get:
-			val, err := ch.value(getr.Var, getr.From)
+		case get := <-ch.get:
+			v, from := get.Var, get.From
+			value, err := ch.value(v, from)
 			if err != nil {
 				err.ReplyTo = "g"
-				getr.From.send(err)
+				from.send(err)
 				continue
 			}
 
 			msg := &setRequest{
 				Cmd:     "s",
 				Channel: ch.name,
-				Var:     getr.Var,
-				Value:   val,
+				Var:     v,
+				Value:   value,
 			}
-			getr.From.send(msg)
+			from.send(msg)
 		case o := <-ch.deliver:
-			val, err := ch.value(o.get.Var, o.get.From)
-			d := goods{
-				value: val,
-				err:   err,
-			}
-			o.to <- d
-		case setr := <-ch.set:
-			v := setr.Var
-			canWrite, hasVar := ch.index[v]
-			if !hasVar {
-				if setr.From != nil {
-					err := channelError(ch, v, "no such var")
-					err.ReplyTo = "s"
-					setr.From.send(err)
+			if o.get.Var != blankIdentifier {
+				value, err := ch.value(o.get.Var, o.get.From)
+				d := goods{
+					value: value,
+					err:   err,
 				}
-				continue
+				o.to <- d
 			}
-
-			// don't let clients set read-only vars
-			if !canWrite && setr.From != nil {
-				err := channelError(ch, v, "can't set that")
+			if o.set.Var != blankIdentifier {
+				err := ch.setVar(o.set.From, o.set.For, o.set.Var, o.set.Value, o.set.Overwrite)
+				d := goods{
+					value: o.set.Value,
+					err:   err,
+				}
+				o.to <- d
+			}
+		case set := <-ch.set:
+			err := ch.setVar(set.From, set.For, set.Var, set.Value, set.Overwrite)
+			if err != nil {
 				err.ReplyTo = "s"
-				setr.From.send(err)
-				continue
-			}
-
-			switch v.kind {
-			case UserVar:
-				// did we get good data?
-				type_ := ch.types[v]
-				if type_.is(setr.Value) {
-					ch.uservars[v][setr.From] = setr.Value
-					ch.invalidate(v)
-				} else {
-					if setr.From != nil {
-						err := channelError(ch, v, "wrong type")
-						err.ReplyTo = "s"
-						setr.From.send(err)
-					}
-				}
-			case ChannelVar:
-				// TODO
-			case WireVar:
-				w := ch.wires[v]
-				if !w.inputType.is(setr.Value) {
-					if setr.From != nil {
-						err := channelError(ch, v, "wrong type")
-						err.ReplyTo = "s"
-						setr.From.send(err)
-					}
-					continue
-				}
-				msg := setr.Value
-				if w.rewrite {
-					msg = w.transform(ch, w, setr.From, msg)
-				}
-				if setr.Overwrite != nil {
-					if m, ok := msg.(map[string]interface{}); ok {
-						for k, v := range setr.Overwrite {
-							m[k] = v
-						}
-					}
-				}
-				ch.notify(v, msg)
+				set.From.sendMaybe(err)
 			}
 		}
 	}
@@ -291,6 +326,7 @@ type getter struct {
 
 type setter struct {
 	From      *client
+	For       *client
 	Var       identifier
 	Value     interface{}
 	Overwrite map[string]interface{}
@@ -298,6 +334,7 @@ type setter struct {
 
 type order struct {
 	get getter
+	set setter
 	to  chan<- goods
 }
 

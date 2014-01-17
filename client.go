@@ -10,10 +10,14 @@ import (
 	"code.google.com/p/go.net/websocket"
 )
 
+const sendQueueSize = 10
+
 var clientsTable = make(map[clientID]*client)
 var clientsTableLock = &sync.RWMutex{}
 
 type clientID string
+
+const clientNone = clientID("")
 
 type client struct {
 	id        clientID
@@ -29,7 +33,7 @@ func newClient(socket *websocket.Conn) *client {
 		socket:    socket,
 		listening: make(map[string]*channel),
 
-		sendq: make(chan interface{}),
+		sendq: make(chan interface{}, sendQueueSize),
 	}
 	addClient(c)
 	return c
@@ -37,6 +41,13 @@ func newClient(socket *websocket.Conn) *client {
 
 func (c *client) send(msg interface{}) {
 	c.sendq <- msg
+}
+
+// try to send a message but not care if client is nil
+func (c *client) sendMaybe(msg interface{}) {
+	if c != nil {
+		c.send(msg)
+	}
 }
 
 func (c *client) setID(id clientID) {
@@ -133,6 +144,7 @@ func (c *client) run() {
 			if ch != nil {
 				set := setter{
 					From:  c,
+					For:   c,
 					Var:   sr.Var,
 					Value: sr.Value,
 				}
@@ -148,6 +160,7 @@ func (c *client) run() {
 				for n, v := range sr.Values {
 					set := setter{
 						From:  c,
+						For:   c,
 						Var:   n,
 						Value: v,
 					}

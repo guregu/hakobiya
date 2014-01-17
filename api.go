@@ -10,7 +10,7 @@ import (
 type apiRequest struct {
 	Var       identifier             `json:"var"`
 	Value     interface{}            `json:"value,omitempty"`
-	For       string                 `json:"for,omitempty"`
+	For       clientID               `json:"for,omitempty"`
 	Key       string                 `json:"key,omitempty"`
 	Overwrite map[string]interface{} `json:"overwrite,omitempty"`
 }
@@ -32,7 +32,8 @@ const (
 func apiHandler(cfg apiConfig) http.Handler {
 	mux := routes.New()
 	mux.Post(cfg.Path+"/:channel/set", apiSet)
-	mux.Post(cfg.Path+"/:channel/fetch", apiFetch)
+	mux.Post(cfg.Path+"/:channel/get", apiGet)
+	//mux.Get(cfg.Path+"/:channel/get/:var", handler)
 	return mux
 }
 
@@ -51,22 +52,38 @@ func apiSet(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad json", http.StatusBadRequest)
 		return
 	}
-	if !checkKey(req) {
+	if !checkKey(req, r) {
 		http.Error(w, "bad key", http.StatusUnauthorized)
 		return
 	}
 
-	msg := setter{
-		Var:       req.Var,
-		Value:     req.Value,
-		Overwrite: req.Overwrite,
-		//TODO: From
+	var to *client
+	if req.For != clientNone {
+		to = getClient(req.For)
+		if to == nil {
+			routes.ServeJson(w, apiResponse{API_Error, "unknown user ID", req.For})
+		}
 	}
-	ch.set <- msg
-	routes.ServeJson(w, apiResponse{API_OK, "", req.Var.String()})
+	mailbox := make(chan goods)
+	msg := order{
+		set: setter{
+			Var:       req.Var,
+			Value:     req.Value,
+			Overwrite: req.Overwrite,
+			For:       to,
+		},
+		to: mailbox,
+	}
+	ch.deliver <- msg
+	g := <-mailbox
+	if g.err == nil {
+		routes.ServeJson(w, apiResponse{API_OK, "", req.Var.String()})
+	} else {
+		routes.ServeJson(w, apiResponse{API_Error, g.err.Error(), g.err})
+	}
 }
 
-func apiFetch(w http.ResponseWriter, r *http.Request) {
+func apiGet(w http.ResponseWriter, r *http.Request) {
 	params := r.URL.Query()
 	name := params.Get(":channel")
 	if !channelExists(name) {
@@ -81,7 +98,7 @@ func apiFetch(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad json", http.StatusBadRequest)
 		return
 	}
-	if !checkKey(req) {
+	if !checkKey(req, r) {
 		http.Error(w, "bad key", http.StatusUnauthorized)
 	} else {
 		mailbox := make(chan goods)
@@ -102,9 +119,13 @@ func apiFetch(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func checkKey(req apiRequest) bool {
-	if currentConfig.API.Key == "" {
+func checkKey(req apiRequest, httpReq *http.Request) bool {
+	key := currentConfig.API.Key
+	if key == "" {
 		return true
 	}
-	return currentConfig.API.Key == req.Key
+	if key == httpReq.URL.Query().Get("key") {
+		return true
+	}
+	return key == req.Key
 }

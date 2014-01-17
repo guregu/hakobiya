@@ -30,8 +30,13 @@ var sigilTable = map[rune]varKind{
 
 // system vars
 var (
-	listenersVar identifier // $listeners
+	// for channels
+	listenersSysVar = identifier{'$', "listeners", SystemVar} // $listeners
+	// for users
+	userIDSysVar = identifier{'$', "userid", SystemVar} // $userid
 )
+
+var blankIdentifier = identifier{}
 
 type identifier struct {
 	sigil rune
@@ -64,9 +69,4 @@ func (id identifier) MarshalJSON() (b []byte, err error) {
 
 func (id identifier) String() string {
 	return fmt.Sprintf("%c%s", id.sigil, id.name)
-}
-
-func init() {
-	// set up system vars
-	listenersVar.UnmarshalText([]byte("$listeners"))
 }
